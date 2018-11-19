@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import qualified UI (main)
 
 main :: IO ()
-main = someFunc
+main = UI.main

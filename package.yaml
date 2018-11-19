@@ -24,6 +24,17 @@ dependencies:
 
 library:
   source-dirs: src
+  dependencies:
+    - brick
+    - containers
+    - vector
+    - linear
+    - microlens
+    - microlens-th
+    - microlens-platform
+    - random
+    - sort
+    - vty
 
 executables:
   pac-man-exe:
