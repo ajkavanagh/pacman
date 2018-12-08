@@ -39,6 +39,12 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
+# Note this is 2.16 of the ncurses library
+extra-deps:
+  - git: https://github.com/WhoMeNope/haskell-ncurses.git
+    commit: 83f02b4512410cc5f6b4291ba2394c7291554b03
+#  - git: https://john-millikin.com/code/haskell-ncurses
+#    commit: 8c227bc53057515195dc9bfee26fe9e798ab65b2
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
