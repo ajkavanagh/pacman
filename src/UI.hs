@@ -7,11 +7,11 @@ import Control.Concurrent (threadDelay, forkIO)
 import Data.Maybe (fromMaybe)
 
 import Data.Vector (Vector, (!), fromList)
---import qualified Data.Vector as V
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.DList as DL
 import Data.Sort (sortOn)
+import Data.List (nub)
 
 import Control.Monad.Trans.Writer.Strict (runWriter)
 
@@ -147,18 +147,19 @@ doDrawList ds g display = do
     render
 
 
--- | prioritise and clean the DrawList  -- basically sort the items in the
--- drawlist according to their `drawPriority` and if the fist element is
--- DrawEverything then just return that item.  It would be nice to do culling,
--- but the work probably doesn't warranty the saving in drawing to a virtual
--- buffer a couple of times.
--- TODO actually make it work;
--- 1. change it to cells and score, other bits, only
--- 2. prioritise the cells (sort) and clean out the overlapping ones.
--- 3. If it's everything, just return the single item (no need to do the other
--- calls).
+-- | prioritise and clean the DrawList
+-- This takes the `drawGridAt` calls and ensures that there is only one of them.
+-- We unique the list using a Data.Set (this reduces multiple DrawGridAt coord
+-- instructions to a single one) and then sort it using drawPriority.  If the
+-- first element in the list is `DrawEverything` then we only need to return
+-- that item, otherwise we return the list.
 prioritiseDrawList :: DrawListItems -> [DrawListItem]
-prioritiseDrawList dli = sortOn drawPriority $ DL.toList dli
+prioritiseDrawList dli = case ds of
+    (x:xs) | x == DrawEverything -> [x]
+    _                            -> ds
+  where
+      ds = sortOn drawPriority $ nub $ DL.toList dli
+
 
 
 -- | Draw a single DrawListItem
@@ -166,14 +167,12 @@ prioritiseDrawList dli = sortOn drawPriority $ DL.toList dli
 doDrawListItem :: Game -> Display -> DrawListItem -> Curses ()
 doDrawListItem g display dli =
     case dli of
-        DrawPacman -> drawPacman g display
-        DrawGhost gp -> drawGhost g display gp
         DrawScore -> renderScoreOnWindow (windowFor ScoreWindow display)
                                          (g ^. score)
                                          (attrs display)
         DrawLevel -> return ()
         DrawLives -> return ()
-        DrawBackground hw -> drawBackGroundAt g display hw
+        DrawGridAt hw -> drawGridAt g display hw
         DrawEverything -> drawEverything g display
 
 
@@ -217,8 +216,6 @@ renderAllGameOnWindow :: Window -> Game -> Attrs -> Curses ()
 renderAllGameOnWindow w g as =
     updateWindow w $ do
         drawFullMazeUpdate g as
-        drawGhostsUpdate g as
-        drawPacmanUpdate g as
         clearAttrUpdate as
         moveCursor 0 0
 
@@ -235,64 +232,12 @@ drawFullMazeUpdate g as =
     drawCoord = drawCell as . cellAt g
 
 
-drawBackGroundAt :: Game -> Display -> Coord -> Curses ()
-drawBackGroundAt g d hw@(V2 h w) =
+drawGridAt :: Game -> Display -> Coord -> Curses ()
+drawGridAt g d hw@(V2 h w) =
     updateWindow (windowFor GridWindow d) $ do
         moveCursor (fromIntegral (h+1)) (fromIntegral (w+1))
         (drawCell (attrs d) . cellAt g) hw
 
-
-drawGhostsUpdate :: Game -> Attrs -> Update ()
-drawGhostsUpdate g as = forM_ (g ^. ghosts) (drawGhostUpdate g as)
-
-
-drawGhost :: Game -> Display -> GhostPersonality -> Curses ()
-drawGhost g d gp =
-    updateWindow (windowFor GridWindow d)
-                 $ drawGhostUpdate g (attrs d) (nameToGhostData gp g)
-
-
-drawGhostUpdate :: Game -> Attrs -> GhostData -> Update ()
-drawGhostUpdate g as gd =
-    unless dead $ do
-        moveCursor (fromIntegral (h+1)) (fromIntegral (w+1))
-        setAttrUsing ghAttr as
-        drawString "M"
-  where
-    dead = gd ^. ghostState == GhostDead
-    (V2 h w) = gd ^. ghostAt
-    fleeing  = ghostsAreFleeing g
-    ghAttr = if fleeing
-               then GhostFleeAttr
-               else case gd ^. name of
-        Shadow  -> GhostShadowAttr
-        Bashful -> GhostBashfulAttr
-        Speedy  -> GhostSpeedyAttr
-        Pokey   -> GhostPokeyAttr
-
-
--- | Draw Pac-man on the GridWindow
-drawPacman :: Game -> Display -> Curses ()
-drawPacman g d =
-    updateWindow (windowFor GridWindow d) $ drawPacmanUpdate g (attrs d)
-
-
-drawPacmanUpdate :: Game -> Attrs -> Update ()
-drawPacmanUpdate g as = do
-    moveCursor (fromIntegral (h+1)) (fromIntegral (w+1))
-    setAttrUsing PacmanAttr as
-    drawString st
-  where
-    p = g ^. pacman
-    (V2 h w) = p ^. pacAt
-    st = if p ^. dying
-      then if _t >= length pacmanDiesChars
-             then " "
-             else [pacmanDiesChars !! _t]
-      else  let s = fromMaybe "" $ lookup (p ^. pacDir) pacmanChars
-                i = _t  `rem` length s
-             in [s !! i]
-    _t = p ^. pacAnimate
 
 -- Handling events
 {-
@@ -384,29 +329,61 @@ drawPaused = withAttr gameOverAttr $ C.hCenter $ str "Paused"
 -- we return a Cell which represents what we want to draw, which might well just
 -- be the character in the maze
 cellAt g hw
-  -- | hw == _pacman ^. pacAt = PacmanW _pacman
-  -- | not (null ghs)         = GhostW (head ghs) fleeing
+  | hw == _pacman ^. pacAt = PacmanW _pacman
+  | not (null ghs)         = GhostW (head ghs) fleeing
   | c == pillChar          = PillW
   | c == powerupChar       = PowerupW
   | c `elem` wallChars     = WallW c
   | otherwise              = SpaceW
-  --where ghs      = filter ((==hw).(^. ghostAt)) $ g ^. ghosts
-        --_pacman  = g ^. pacman
-  where c        = mazeCharAt g hw
-        --fleeing  = ghostsAreFleeing g
+  where ghs      = filter ((==hw).(^. ghostAt)) $ g ^. ghosts
+        _pacman  = g ^. pacman
+        c        = mazeCharAt g hw
+        fleeing  = ghostsAreFleeing g
 
 
 drawCell :: Attrs -> Cell -> Update ()
 drawCell as cell = do
     setAttrUsing attr as
-    drawString [ch]
+    drawString st
     clearAttrUpdate as
   where
-    (attr, ch) = case cell of
-        SpaceW -> (EmptyAttr, ' ')
-        PillW  -> (PillAttr,  pillChar)
-        PowerupW -> (PowerupAttr, powerupChar)
-        (WallW c) -> (WallAttr, c)
+    (attr, st) = case cell of
+        PacmanW p   -> (PacmanAttr, strForPacman p)
+        GhostW gd f -> ghostAttrAndStr gd f
+        SpaceW      -> (EmptyAttr, " ")
+        PillW       -> (PillAttr,  [pillChar])
+        PowerupW    -> (PowerupAttr, [powerupChar])
+        (WallW c)   -> (WallAttr,[c])
+
+
+strForPacman :: PacmanData -> String
+strForPacman p = st
+  where
+    (V2 h w) = p ^. pacAt
+    st = if p ^. dying
+      then if _t >= length pacmanDiesChars
+             then " "
+             else [pacmanDiesChars !! _t]
+      else  let s = fromMaybe "" $ lookup (p ^. pacDir) pacmanChars
+                i = _t  `rem` length s
+             in [s !! i]
+    _t = p ^. pacAnimate
+
+
+ghostAttrAndStr :: GhostData -> Bool -> (Attr, String)
+ghostAttrAndStr gd fleeing = (ghAttr, "M")
+  where
+    dead = gd ^. ghostState == GhostDead
+    st   = if dead then "" else "M"
+    (V2 h w) = gd ^. ghostAt
+    ghAttr = if fleeing
+               then GhostFleeAttr
+               else case gd ^. name of
+        Shadow  -> GhostShadowAttr
+        Bashful -> GhostBashfulAttr
+        Speedy  -> GhostSpeedyAttr
+        Pokey   -> GhostPokeyAttr
+
 
 {-
 drawCell :: Cell -> Widget Name

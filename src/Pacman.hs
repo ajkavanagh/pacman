@@ -143,21 +143,17 @@ maze0 = [ "###########################"
         ]
 
 data DrawListItem
-  = DrawPacman
-  | DrawGhost GhostPersonality
-  | DrawScore
+  = DrawScore
   | DrawLevel
   | DrawLives
-  | DrawBackground Coord
+  | DrawGridAt Coord
   | DrawEverything
   deriving (Eq, Show)
 
 drawPriority :: DrawListItem -> Int
 drawPriority DrawEverything     = 0
-drawPriority DrawPacman         = 1
-drawPriority (DrawGhost _)      = 2
-drawPriority (DrawBackground _) = 3
-drawPriority _                  = 4
+drawPriority (DrawGridAt _)     = 1
+drawPriority _                  = 2
 
 type DrawListItems = DList DrawListItem
 
@@ -492,21 +488,21 @@ decPacmanTick g = return $ g & (pacman . pacTick) %~ pred
 movePacmanAction :: Game -> DrawList Game
 movePacmanAction g
   | pickNextDir = do
-      addDrawListItem $ DrawBackground hw
-      addDrawListItem DrawPacman
+      addDrawListItem $ DrawGridAt hw
+      addDrawListItem $ DrawGridAt hw'
       return $ g
         & (pacman . pacDir) .~ nextDir
         & (pacman . pacAt) .~ nextHw
         & (pacman . pacNextDir) .~ Still
         & (pacman . pacAnimate) .~ 0
   | pickDir = do
-      addDrawListItem $ DrawBackground hw
-      addDrawListItem DrawPacman
+      addDrawListItem $ DrawGridAt hw
+      addDrawListItem $ DrawGridAt hw'
       return $ g
         & (pacman . pacAt) .~ hw'
         & (pacman . pacAnimate) %~ (+1)
   | otherwise = do
-      addDrawListItem DrawPacman
+      addDrawListItem $ DrawGridAt hw'
       return $ g
         & (pacman . pacDir) .~ Still
         & (pacman . pacNextDir) .~ Still
@@ -547,11 +543,9 @@ eatPillOrPowerUpAction g
 
 
 -- | redraw all the ghosts - probably due to a mode change.
--- TODO: change this so that it redraws the cell, rather than using the ghost
--- mode.
 redrawGhosts :: Game -> DrawList ()
 redrawGhosts g =
-    mapM_ (\gd -> addDrawListItem $ DrawGhost (gd ^. name)) $ g ^. ghosts
+    mapM_ (\gd -> addDrawListItem (DrawGridAt (gd ^. ghostAt))) (g ^. ghosts)
 
 
 -- | choose the delay to the next move for pacman
