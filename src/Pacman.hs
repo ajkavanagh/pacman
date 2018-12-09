@@ -372,9 +372,11 @@ initialGhosts =
     , GhostData (V2 11 15) East GhostHouse  Pokey   GhostRateNormal 0
     ]
 
-initialPacman :: PacmanData
+-- | The initial Pac-man structure -- note that the pacTick is '1' because it
+-- decrements FIRST and then gets checked.
 --                         location   dir   next  dying pacTick pacAnimate
-initialPacman = PacmanData (V2 17 13) Still Still False 0       0
+initialPacman :: PacmanData
+initialPacman = PacmanData (V2 17 13) Still Still False 1       0
 
 
 -- ACTIONS from the UI. i.e. turn, pause, processTick

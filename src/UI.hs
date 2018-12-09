@@ -16,7 +16,7 @@ import Data.List (nub)
 import Control.Monad.Trans.Writer.Strict (runWriter)
 
 import UI.NCurses
-  ( Window, Update, Curses, Event(..)
+  ( Window, Update, Curses, Event(..), Key(..)
   , updateWindow, defaultWindow, newWindow, closeWindow
   , runCurses, render
   , clear
@@ -24,7 +24,7 @@ import UI.NCurses
   , drawBorder, drawString
   , Attribute(..), setAttributes
   , Color(..), ColorID, setColor, newColorID, supportsColor
-  , getEvent
+  , getEvent, setEcho, setKeypad
   , setCursorMode, CursorMode(..)
   )
 
@@ -52,6 +52,7 @@ data Cell = PacmanW PacmanData
 -- These are the windows that make up the App.
 data AppWindow = ScoreWindow
                | GridWindow
+               | DebugPacmanWindow
                deriving (Eq, Ord, Show)
 
 -- The WindowMap stores a lookup of AppWindow to actual ncurses window
@@ -84,26 +85,33 @@ main = do
 ncursesMain :: BChan a -> Game -> IO ()
 ncursesMain chan initG = runCurses $ do
     lastCursorMode <- setCursorMode CursorInvisible
+    setEcho False
     let (mh, mw) = mazeHW (initG ^. maze)
     theAttrs <- makeAttrs
     sw <- newWindow 5 20 0 0
+    setKeypad sw True
     gw <- newWindow (fromIntegral (mh+2)) (fromIntegral (mw+2)) 0 30
+    pwdebug <- newWindow 6 20 10 0
     let display =
-            Display { windows = M.fromList [(ScoreWindow,sw), (GridWindow,gw)]
+            Display { windows = M.fromList
+                                    [ (ScoreWindow,sw)
+                                    , (GridWindow,gw)
+                                    , (DebugPacmanWindow,pwdebug)
+                                    ]
                     , attrs   = theAttrs }
     drawEverything initG display
     render
     let loop g = do
-        g' <- handleTick g display
-        -- wait for the Tick event - blocks until the event is received
-        liftIO $ readBChan chan
-        -- get any keyboard event -- but don't wait for it
-        ev <- getEvent sw (Just 0)
-        case ev of
-            Nothing -> loop g'
-            Just ev' -> do
-                g'' <- handleEvent g' display ev'
-                unless (isQuit ev') (loop g'')
+                 g' <- handleTick g display
+                 -- wait for the Tick event - blocks until the event is received
+                 liftIO $ readBChan chan
+                 -- get any keyboard event -- but don't wait for it
+                 ev <- getEvent sw (Just 0)
+                 case ev of
+                     Nothing -> loop g'
+                     Just ev' -> do
+                         g'' <- handleEvent ev' g' display
+                         unless (isQuit ev') (loop g'')
     -- run the loop until the user quits
     loop initG
     -- clean up
@@ -114,8 +122,28 @@ ncursesMain chan initG = runCurses $ do
 
 -- | Handle an ncurses event (probably keyboard) and update the game state and
 -- maybe redraw an window or two.
-handleEvent :: Game -> Display -> Event -> Curses Game
-handleEvent g _ _ = return g
+handleEvent :: Event -> Game -> Display -> Curses Game
+handleEvent ev g d = case mapEvent ev of
+    Just f -> runAction f g d
+    Nothing -> return g
+
+
+mapEvent :: Event -> Maybe (Game -> DrawList Game)
+mapEvent (EventSpecialKey KeyUpArrow)    = Just $ turnAction North
+mapEvent (EventSpecialKey KeyRightArrow) = Just $ turnAction East
+mapEvent (EventSpecialKey KeyDownArrow)  = Just $ turnAction South
+mapEvent (EventSpecialKey KeyLeftArrow)  = Just $ turnAction West
+mapEvent _ = Nothing
+
+--
+-- Handling events
+{-
+handleEvent g (VtyEvent (V.EvKey (V.KChar 'r') [])) = liftIO initGameIO >>= continue
+handleEvent g (VtyEvent (V.EvKey (V.KChar 'p') [])) = continue $ pause g
+handleEvent g (VtyEvent (V.EvKey V.KEsc []))        = halt g
+handleEvent g _                                     = continue g
+-}
+
 
 
 -- | handle the tick -- i.e. update the game state and maybe do a redraw
@@ -130,6 +158,8 @@ handleTick = runAction tickAction
 -- allowing the action function to queue up DrawListItem draws.
 runAction :: (Game -> DrawList Game) -> Game -> Display -> Curses Game
 runAction action g display = do
+    drawDebugPacman g display
+    render  -- only if doing debug displays
     let (g', drawList) = runWriter (action g)
     if null drawList
       then return g'
@@ -180,8 +210,13 @@ windowFor :: AppWindow -> Display -> Window
 windowFor aw d = windows d M.! aw
 
 
--- TODO: what's the type for this function????
-isQuit c = c == EventCharacter 'q' || c == EventCharacter 'Q'
+isQuit :: Event -> Bool
+isQuit = isEventChars "qQ"
+
+
+isEventChars :: String -> Event -> Bool
+isEventChars s (EventCharacter c) = c `elem` s
+isEventChars _ _ = False
 
 
 drawBorderHelper :: Window -> Curses ()
@@ -238,37 +273,6 @@ drawGridAt g d hw@(V2 h w) =
         moveCursor (fromIntegral (h+1)) (fromIntegral (w+1))
         (drawCell (attrs d) . cellAt g) hw
 
-
--- Handling events
-{-
-cacheHelper :: Game -> (Game -> Game) -> Name -> EventM Name (Next Game)
-cacheHelper g f n = do
-    let g' = f g
-    when (g'^.doInvalidateCache) $ invalidateCacheEntry n
-    continue g'
-
-handleEvent :: Game -> BrickEvent Name Tick -> EventM Name (Next Game)
-handleEvent g (AppEvent TickPacman)                 = cacheHelper g stepPacman GridR
-handleEvent g (AppEvent TickGhostNormal)            = cacheHelper g stepGhostsNormal GridR
-handleEvent g (AppEvent TickGhostSpeedup1)          = cacheHelper g stepGhostsSpeedup1 GridR
-handleEvent g (AppEvent TickGhostSpeedup2)          = cacheHelper g stepGhostsSpeedup2 GridR
-handleEvent g (AppEvent TickGhostFlee)              = cacheHelper g stepGhostsFlee GridR
-handleEvent g (VtyEvent (V.EvKey V.KUp []))         = continue $ turn North g
-handleEvent g (VtyEvent (V.EvKey V.KDown []))       = continue $ turn South g
-handleEvent g (VtyEvent (V.EvKey V.KRight []))      = continue $ turn East g
-handleEvent g (VtyEvent (V.EvKey V.KLeft []))       = continue $ turn West g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'k') [])) = continue $ turn North g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'j') [])) = continue $ turn South g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'l') [])) = continue $ turn East g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'h') [])) = continue $ turn West g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'r') [])) = liftIO initGameIO >>= continue
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'p') [])) = continue $ pause g
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'q') [])) = halt g
-handleEvent g (VtyEvent (V.EvKey V.KEsc []))        = halt g
-handleEvent g _                                     = continue g
--}
-
-
 {-
 drawDebugPacman :: Game -> Widget Name
 drawDebugPacman g = withBorderStyle BS.unicodeBold
@@ -280,6 +284,27 @@ drawDebugPacman g = withBorderStyle BS.unicodeBold
          ]
   where p = g ^. pacman
 -}
+
+drawDebugPacman :: Game -> Display -> Curses ()
+drawDebugPacman g d =
+    updateWindow (windowFor DebugPacmanWindow d) $ do
+        clearAttrUpdate (attrs d)
+        clear
+        moveCursor 0 0
+        drawString ("pacAt:      " ++ show (p ^. pacAt))
+        moveCursor 1 0
+        drawString ("pacDir:     " ++ show (p ^. pacDir))
+        moveCursor 2 0
+        drawString ("pacNextDir: " ++ show (p ^. pacNextDir))
+        moveCursor 3 0
+        drawString ("dying:      " ++ show (p ^. dying))
+        moveCursor 4 0
+        drawString ("pacAnimate: " ++ show (p ^. pacAnimate))
+        moveCursor 5 0
+        drawString ("pacTick:    " ++ show (p ^. pacTick))
+  where p = g ^. pacman
+
+
 
 {-
 drawDebugGame :: Game -> Widget Name
