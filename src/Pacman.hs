@@ -83,7 +83,6 @@ data GhostData = GhostData
   , _ghostDir   :: Direction
   , _ghostState :: GhostState
   , _name       :: GhostPersonality
-  , _ghostRate  :: GhostRate
   , _ghostTick  :: Int
   } deriving (Eq, Show)
 
@@ -366,10 +365,10 @@ initGame
 initialGhosts :: [GhostData]
 initialGhosts =
     --          location   dir  state       name    ghostTick
-    [ GhostData (V2 11 11) West GhostHouse  Bashful GhostRateNormal 0
-    , GhostData (V2 11 13) West GhostNormal Speedy  GhostRateNormal 0
-    , GhostData (V2  9 13) East GhostNormal Shadow  GhostRateNormal 0
-    , GhostData (V2 11 15) East GhostHouse  Pokey   GhostRateNormal 0
+    [ GhostData (V2 11 11) West GhostHouse  Bashful 0
+    , GhostData (V2 11 13) West GhostNormal Speedy  0
+    , GhostData (V2  9 13) East GhostNormal Shadow  0
+    , GhostData (V2 11 15) East GhostHouse  Pokey   0
     ]
 
 -- | The initial Pac-man structure -- note that the pacTick is '1' because it
@@ -638,19 +637,6 @@ eatonByGhost g = g & gameover .~ True
                    & (pacman . pacAnimate) .~ 0
 
 
--- | check the current Ghost mode and change it if the ticks have expired.
---maybeUpdateGhostMode :: Game -> Game
---maybeUpdateGhostMode g = ifNextMode $ case g ^. ghostMode of
-    --(GhostHold t)    -> (initialHoldFrames, chasePacman)
-    --(GhostChase t)   -> (t, scatterFromPacman)
-    --(GhostScatter t) -> (t, chasePacman)
-    --(GhostFlee t _)  -> (t, chasePacman)
-  --where
-      --ifNextMode :: (Int, Game -> GhostMode) -> Game
-      --ifNextMode (_t, f) = if g ^. gameTick > _t
-                             --then g & ghostMode .~ f g
-                             --else g
-
 -- | see if we choose the next ghost mode
 -- Essentially, count down the mode and if zero, pick the next one, unless we
 -- are already at the last one (GhostChase Nothing)
@@ -675,18 +661,12 @@ nextGhostsMode g = case g ^. ghostsModes of
     _      -> (g ^. ghostsMode, [])
 
 
--- move all the ghosts, one after another, but returning a function which does
+-- | move all the ghosts, one after another, but returning a function which does
 -- it
+-- TODO: do we really want to do a fold; a map would be nicer
+--  e.g.         & ghosts %~ map (ghostDir %~ reverseDirection)
 moveGhosts :: Game -> Game
 moveGhosts g = foldr moveGhost g $ zip [0..] (g ^. ghosts)
-
--- TODO: we don't want to do the fold; we want to use g & ghosts %~ map (some
--- function) which will apply "some function" to each of the ghosts
-moveGhostsInRate :: GhostRate -> Game -> Game
-moveGhostsInRate rate g
-  = foldr moveGhost g
-  $ filter ((==rate) . (^. ghostRate) . snd)
-  $ zip [0..] (g ^. ghosts)
 
 
 moveGhost :: (Int, GhostData) -> Game -> Game
@@ -813,12 +793,15 @@ targetTileScatter :: GhostData -> Game -> Coord
 targetTileScatter gd g = case gd ^. name of
     Speedy  -> V2 (-2) 2   -- Pink ghost (2 above 2 in from lhs)
     Shadow  ->
-        if gd ^. ghostRate /= GhostRateNormal
+        if fastShadow
           && not (any ((==GhostHouse).(^. ghostState)) (g ^. ghosts))
            then targetTileChase gd g  -- Shadow chases in scatter!
            else V2 (-2) 24            -- Red ghost (2 above, 2 in from rhs)
     Bashful -> V2 23   26  -- Cyan ghost (1 bwlow, 0 in from rhs)
     Pokey   -> V2 23   0   -- Orange ghost (1 below, 0 in from lhs)
+  where
+    (p1, _, _, _) = elroyFramesForLevel $ g ^. gameLevel
+    fastShadow = (g ^. pillsLeft) < p1
 
 
 targetTileChase :: GhostData -> Game -> Coord
