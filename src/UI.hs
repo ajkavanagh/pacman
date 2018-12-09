@@ -34,6 +34,11 @@ import BChan (BChan, newBChan, writeBChan, readBChan)
 import Linear.V2 (V2(..))
 import Lens.Micro ((^.))
 
+
+showDebug = True
+showPacmanDebug = False
+showGameDebug = True
+
 -- Types
 
 -- | Ticks mark passing of time
@@ -52,7 +57,7 @@ data Cell = PacmanW PacmanData
 -- These are the windows that make up the App.
 data AppWindow = ScoreWindow
                | GridWindow
-               | DebugPacmanWindow
+               | DebugWindow
                deriving (Eq, Ord, Show)
 
 -- The WindowMap stores a lookup of AppWindow to actual ncurses window
@@ -91,12 +96,13 @@ ncursesMain chan initG = runCurses $ do
     sw <- newWindow 5 20 0 0
     setKeypad sw True
     gw <- newWindow (fromIntegral (mh+2)) (fromIntegral (mw+2)) 0 30
-    pwdebug <- newWindow 6 20 10 0
+    pwdebug <- newWindow 6 40 10 0
+    updateWindow pwdebug clear
     let display =
             Display { windows = M.fromList
-                                    [ (ScoreWindow,sw)
-                                    , (GridWindow,gw)
-                                    , (DebugPacmanWindow,pwdebug)
+                                    [ (ScoreWindow, sw)
+                                    , (GridWindow,  gw)
+                                    , (DebugWindow, pwdebug)
                                     ]
                     , attrs   = theAttrs }
     drawEverything initG display
@@ -158,8 +164,7 @@ handleTick = runAction tickAction
 -- allowing the action function to queue up DrawListItem draws.
 runAction :: (Game -> DrawList Game) -> Game -> Display -> Curses Game
 runAction action g display = do
-    drawDebugPacman g display
-    render  -- only if doing debug displays
+    when showDebug $ drawDebugData g display
     let (g', drawList) = runWriter (action g)
     if null drawList
       then return g'
@@ -200,8 +205,12 @@ doDrawListItem g display dli =
         DrawScore -> renderScoreOnWindow (windowFor ScoreWindow display)
                                          (g ^. score)
                                          (attrs display)
-        DrawLevel -> return ()
-        DrawLives -> return ()
+        DrawLevel -> renderLivesOnWindow (windowFor ScoreWindow display)
+                                         (g ^. livesLeft)
+                                         (attrs display)
+        DrawLives -> renderLevelOnWindow (windowFor ScoreWindow display)
+                                         (g ^. gameLevel)
+                                         (attrs display)
         DrawGridAt hw -> drawGridAt g display hw
         DrawEverything -> drawEverything g display
 
@@ -235,15 +244,37 @@ drawEverything g display = do
     drawBorderHelper sw
     drawBorderHelper gw
     renderScoreOnWindow sw (g ^. score) as
+    renderLivesOnWindow sw (g ^. livesLeft) as
+    renderLevelOnWindow sw (g ^. gameLevel) as
     renderAllGameOnWindow gw g as
 
 
 renderScoreOnWindow :: Window -> Int -> Attrs -> Curses ()
-renderScoreOnWindow w s as =
+renderScoreOnWindow w s =
+    commonRenderStats w ("Score: " ++ show s) 1 ScoreAttr
+
+
+renderLivesOnWindow :: Window -> Int -> Attrs -> Curses ()
+renderLivesOnWindow w l =
+    commonRenderStats w ("Lives: " ++ show l) 3 LivesAttr
+
+
+renderLevelOnWindow :: Window -> Int -> Attrs -> Curses ()
+renderLevelOnWindow w l =
+    commonRenderStats w ("Level: " ++ show l) 2 LevelAttr
+
+
+commonRenderStats :: Window  -- window to draw on
+                  -> String  -- string to write
+                  -> Integer -- line to draw on
+                  -> Attr    -- attribute to use
+                  -> Attrs   -- all attributes
+                  -> Curses ()
+commonRenderStats w s l a as =
     updateWindow w $ do
-        moveCursor 1 1
-        setAttrUsing ScoreAttr as
-        drawString ("Score: " ++ show s)
+        moveCursor l 1
+        setAttrUsing a as
+        drawString s
         moveCursor 0 0
 
 
@@ -273,53 +304,53 @@ drawGridAt g d hw@(V2 h w) =
         moveCursor (fromIntegral (h+1)) (fromIntegral (w+1))
         (drawCell (attrs d) . cellAt g) hw
 
-{-
-drawDebugPacman :: Game -> Widget Name
-drawDebugPacman g = withBorderStyle BS.unicodeBold
-  $ B.borderWithLabel (str "Pacman debug")
-  $ vBox [ hBox [str "pacAt:      ", str $ show (p ^. pacAt)]
-         , hBox [str "pacDir:     ", str $ show (p ^. pacDir)]
-         , hBox [str "pacNextDir: ", str $ show (p ^. pacNextDir)]
-         , hBox [str "dying:      ", str $ show (p ^. dying)]
-         ]
-  where p = g ^. pacman
--}
 
-drawDebugPacman :: Game -> Display -> Curses ()
-drawDebugPacman g d =
-    updateWindow (windowFor DebugPacmanWindow d) $ do
-        clearAttrUpdate (attrs d)
+drawDebugData :: Game -> Display -> Curses ()
+drawDebugData g d = do
+    let lines = zip [0..] (determineDebugLines g)
+    updateWindow (windowFor DebugWindow d) $ do
         clear
-        moveCursor 0 0
-        drawString ("pacAt:      " ++ show (p ^. pacAt))
-        moveCursor 1 0
-        drawString ("pacDir:     " ++ show (p ^. pacDir))
-        moveCursor 2 0
-        drawString ("pacNextDir: " ++ show (p ^. pacNextDir))
-        moveCursor 3 0
-        drawString ("dying:      " ++ show (p ^. dying))
-        moveCursor 4 0
-        drawString ("pacAnimate: " ++ show (p ^. pacAnimate))
-        moveCursor 5 0
-        drawString ("pacTick:    " ++ show (p ^. pacTick))
+        clearAttrUpdate (attrs d)
+        forM_ lines $ \(i, l) -> do
+            moveCursor i 0
+            drawString l
+    render
+
+
+determineDebugLines :: Game -> [String]
+determineDebugLines g
+  =  debugPacmanLines g
+  ++ debugGameLines g
+
+
+debugPacmanLines :: Game -> [String]
+debugPacmanLines g =
+    if showPacmanDebug
+      then
+        [ "pacAt:      " ++ show (p ^. pacAt)
+        , "pacDir:     " ++ show (p ^. pacDir)
+        , "pacNextDir: " ++ show (p ^. pacNextDir)
+        , "dying:      " ++ show (p ^. dying)
+        , "pacAnimate: " ++ show (p ^. pacAnimate)
+        , "pacTick:    " ++ show (p ^. pacTick)
+        ]
+      else []
   where p = g ^. pacman
 
 
+debugGameLines :: Game -> [String]
+debugGameLines g =
+    if showGameDebug
+      then
+        [ "pillsLeft: " ++ show (g ^. pillsLeft)
+        , "paused:    " ++ show (g ^. paused)
+        , "ghostsMode:" ++ show (g ^. ghostsMode)
+        , "gameover:  " ++ show (g ^. gameover)
+        , "state:     " ++ show (g ^. state)
+        , "score:     " ++ show (g ^. score)
+        ]
+      else []
 
-{-
-drawDebugGame :: Game -> Widget Name
-drawDebugGame g = withBorderStyle BS.unicodeBold
-  $ B.borderWithLabel (str "Game debug")
-  $ vBox [ hBox [str "pillsLeft: ", str $ show (g ^. pillsLeft)]
-         , hBox [str "paused:    ", str $ show (g ^. paused)]
-         , hBox [str "gameTick:  ", str $ show (g ^. gameTick)]
-         , hBox [str "nextMove:  ", str $ show (g ^. nextMove)]
-         , hBox [str "ghostMode: ", str $ show (g ^. ghostMode)]
-         , hBox [str "gameover:  ", str $ show (g ^. gameover)]
-         , hBox [str "state:     ", str $ show (g ^. state)]
-         , hBox [str "score:     ", str $ show (g ^. score)]
-         ]
--}
 
 {-
 drawDebugGhost :: Game -> GhostPersonality -> Widget Name
@@ -381,6 +412,7 @@ drawCell as cell = do
         (WallW c)   -> (WallAttr,[c])
 
 
+-- note this relies on pacTick being reset in game when pacman dies
 strForPacman :: PacmanData -> String
 strForPacman p = st
   where
@@ -410,39 +442,6 @@ ghostAttrAndStr gd fleeing = (ghAttr, "M")
         Pokey   -> GhostPokeyAttr
 
 
-{-
-drawCell :: Cell -> Widget Name
-drawCell SpaceW            = withAttr emptyAttr $ str " "
-drawCell PillW             = withAttr pillAttr $ str [pillChar]
-drawCell PowerupW          = withAttr powerupAttr $ str [powerupChar]
-drawCell (WallW c)         = withAttr wallAttr $ str [c]
-drawCell (GhostW gh f)
-  | dead      = withAttr emptyAttr $ str " "
-  | f         = withAttr ghostFleeAttr $ str [ghostChar]
-  | otherwise = withAttr ghAttr $ str [ghostChar]
-  where
-    dead = gh ^. ghostState == GhostDead
-    ghAttr = case gh ^. name of
-        Shadow  -> ghostShadowAttr
-        Bashful -> ghostBashfulAttr
-        Speedy  -> ghostSpeedyAttr
-        Pokey   -> ghostPokeyAttr
--}
-
--- note this relies on pacTick being reset in game when pacman dies
-{-
-drawCell (PacmanW p) = withAttr pacmanAttr $
-    if p ^. dying
-      then if _t >= length pacmanDiesChars
-             then str " "
-             else str [pacmanDiesChars !! _t]
-      else  let s = fromMaybe "" $ lookup (p ^. pacDir) pacmanChars
-                i = _t  `rem` length s
-             in str [s !! i]
-  where _t = p ^. pacTick
--}
-
-
 data Attr
   = EmptyAttr
   | PillAttr
@@ -455,6 +454,8 @@ data Attr
   | GhostSpeedyAttr
   | GhostPokeyAttr
   | ScoreAttr
+  | LivesAttr
+  | LevelAttr
   deriving (Show, Eq, Enum)
 
 type Attrs = Vector (ColorID, [Attribute])
@@ -491,6 +492,8 @@ makeAttrs = do
         ghostSpeedyAttr = (magentaID, [AttributeBold])
         ghostPokeyAttr = (greenID, [AttributeBold])
         scoreAttr = (whiteID, [AttributeBold])
+        livesAttr = (whiteID, [])
+        levelAttr = (whiteID, [])
     return $ fromList [ emptyAttr
                       , pillAttr
                       , powerupAttr
@@ -502,4 +505,6 @@ makeAttrs = do
                       , ghostSpeedyAttr
                       , ghostPokeyAttr
                       , scoreAttr
+                      , livesAttr
+                      , levelAttr
                       ]
