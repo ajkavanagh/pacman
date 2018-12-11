@@ -14,7 +14,7 @@ import           Data.List           (findIndex)
 import           Data.DList          (DList, singleton)
 import           Data.Sort           (sortOn)
 
-import           Lens.Micro          ((%~), (&), (.~), (^.), ix)
+import           Lens.Micro          ((%~), (&), (.~), (^.), each)
 import           Lens.Micro.TH       (makeLenses)
 import           Linear.V2           (V2 (..), _x, _y)
 import           System.Random       (Random (..), newStdGen, StdGen, mkStdGen, randomR)
@@ -529,7 +529,7 @@ eatPillOrPowerUpAction g
         & maze %~ (`mazeClearAt` hw)
         & ghostsMode .~ fleePacman g
         & (pacman . pacTick) .~ choosePacTick g EatenPowerup
-        & ghosts %~ map (ghostDir %~ reverseDirection)
+        & ghosts . each %~ ghostDir %~ reverseDirection
   | otherwise = return $ g & (pacman . pacTick) .~ choosePacTick g EatenNothing
   where hw = g ^. (pacman . pacAt)
         c = mazeCharAt g hw
@@ -578,14 +578,12 @@ maybeDoGhosts g
     onTick = (g ^. gameTick) `rem` ticksPerPacman == 0
 -}
 
+
 eatGhostOrBeEaton :: Game -> Game
-eatGhostOrBeEaton g
-  | fleeing = if not (null ghs)
-                then eatGhost (head ghs) g
-                else g
-  | otherwise = if null ghs || (g ^. pacman . dying)
-                  then g
-                  else eatonByGhost g
+eatGhostOrBeEaton g = case (null ghs, fleeing) of
+    (True, _)      -> g
+    (False, True)  -> eatGhost (head ghs) g
+    (False, False) -> eatenByGhost g
   where
       xy = g ^. pacman . pacAt
       ghs = filter ((==xy).(^. ghostAt)) $ g ^. ghosts
@@ -600,25 +598,26 @@ ghostsAreFleeing g = case g ^. ghostsMode of
 
 -- | eat a ghost.  We get 200 for the first, 400 for the second, 800 for the
 -- third and 1600 for the fourth with an extra bonus of 1200 for all 4.
--- TODO: rewrite this without the ix
 eatGhost :: GhostData -> Game -> Game
 eatGhost gd g = g & score %~ scoref
-                  & (ghosts . ix i . ghostState) .~ GhostDead
-                  & (ghosts . ix i . ghostAt) .~ ghostDeadAt
+                  & ghosts . each %~ killGhost (gd ^. name)
   where
-      i = fromMaybe 0 $ findIndex ((==gd ^. name).(^. name)) $ g ^. ghosts
-      numDead = length $ filter ((==GhostDead).(^.ghostState)) $ g ^. ghosts
-      ghostScore = (2 ^ numDead) * 200
-      bonusScore = if numDead == 3 then 1200 else 0
-      scoref n = n + ghostScore + bonusScore
+    numDead = length $ filter ((==GhostDead).(^.ghostState)) $ g ^. ghosts
+    ghostScore = (2 ^ numDead) * 200
+    bonusScore = if numDead == 3 then 1200 else 0
+    scoref n = n + ghostScore + bonusScore
 
 
-nameToGhostData :: GhostPersonality -> Game -> GhostData
-nameToGhostData gp g = head $ filter ((==gp).(^. name)) $ g ^. ghosts
+-- | kill the ghost with the name
+killGhost :: GhostPersonality -> GhostData -> GhostData
+killGhost p gd
+  | p == gd ^. name = gd & ghostState .~ GhostDead
+                         & ghostAt .~ ghostDeadAt
+  | otherwise       = gd
 
 
-eatonByGhost :: Game -> Game
-eatonByGhost g = g & gameover .~ True
+eatenByGhost :: Game -> Game
+eatenByGhost g = g & gameover .~ True
                    & (pacman . dying) .~ True
                    & (pacman . pacAnimate) .~ 0
 
@@ -649,10 +648,8 @@ nextGhostsMode g = case g ^. ghostsModes of
 
 -- | move all the ghosts, one after another, but returning a function which does
 -- it
--- TODO: should this really be a traversal over the list of ghosts; i.e. not
--- using a `map`
 moveGhosts :: Game -> Game
-moveGhosts g = g & ghosts %~ map (moveGhost g)
+moveGhosts g = g & ghosts . each %~ moveGhost g
 
 -- | move the ghost if the ghostTick is decremented to 0, otherwise just return
 -- the decremented gd with the tick down.  Note the next tick is ONLY choosen if
@@ -676,33 +673,44 @@ moveGhost g gd
 
 
 -- yellowDecision is greenDecision but not heading north!
--- | make a decision by picking a direction based on the ghostmode
---
--- TODO: rewrite this into two functions that so we don't have the dir' and hw'
--- pairs -- i.e. they are really separate functions for fleeing and
--- chase/scatter due to the random selection
+-- | make a decision by picking a direction based on the ghoststate
 makeDecision :: Game
              -> GhostsState
              -> Bool  -- if True, it's a yellow tile
-             -> GhostData
-             -> GhostData
+             -> GhostData -> GhostData
 makeDecision g gmode isYellow gd
   = if fleeing
-      then gd & ghostAt .~ hw
-              & ghostDir .~ dir
-              & ghostRandStdGen .~ gen'
-      else gd & ghostAt .~ hw'
-              & ghostDir .~ dir'
+      then gd & makeFleeingDecision g possibleDirections
+      else gd & makeNonFleeingDecision g possibleDirections gmode
  where
     fleeing = ghostsAreFleeing g
     f = if isYellow then filterOutNorth else id
     possibleDirections = f $ possibleDecisionsAt g gd
-    ((dir, hw), gen') = chooseRandomFromList possibleDirections
-                                             (gd ^. ghostRandStdGen)
+
+
+makeFleeingDecision :: Game
+                    -> [(Direction, Coord)]
+                    -> GhostData -> GhostData
+makeFleeingDecision g possibles gd
+  = gd & ghostAt .~ hw
+       & ghostDir .~ dir
+       & ghostRandStdGen .~ gen
+  where
+    ((dir, hw), gen) = chooseRandomFromList possibles (gd ^. ghostRandStdGen)
+
+
+makeNonFleeingDecision :: Game
+                       -> [(Direction, Coord)]
+                       -> GhostsState
+                       -> GhostData -> GhostData
+makeNonFleeingDecision g possibles gmode gd
+  = gd & ghostAt .~ hw
+       & ghostDir .~ dir
+  where
     targetF = if gmode == GhostsScatter
                 then targetTileScatter
                 else targetTileChase
-    (dir', hw') = selectShortest (targetF g gd)  possibleDirections
+    (dir, hw) = selectShortest (targetF g gd) possibles
 
 
 chooseGhostTick :: Game -> GhostData -> Int
