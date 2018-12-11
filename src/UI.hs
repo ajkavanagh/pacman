@@ -200,17 +200,13 @@ prioritiseDrawList dli = case ds of
 -- | Draw a single DrawListItem
 -- Updates in a Curses () monad context.
 doDrawListItem :: Game -> Display -> DrawListItem -> Curses ()
-doDrawListItem g display dli =
+doDrawListItem g display dli = do
+    let sw = windowFor ScoreWindow display
+        as = attrs display
     case dli of
-        DrawScore -> renderScoreOnWindow (windowFor ScoreWindow display)
-                                         (g ^. score)
-                                         (attrs display)
-        DrawLevel -> renderLivesOnWindow (windowFor ScoreWindow display)
-                                         (g ^. livesLeft)
-                                         (attrs display)
-        DrawLives -> renderLevelOnWindow (windowFor ScoreWindow display)
-                                         (g ^. gameLevel)
-                                         (attrs display)
+        DrawScore -> renderScoreOnWindow sw (g ^. score) as
+        DrawLevel -> renderLivesOnWindow sw (g ^. livesLeft) as
+        DrawLives -> renderLevelOnWindow sw (g ^. gameLevel) as
         DrawGridAt hw -> drawGridAt g display hw
         DrawEverything -> drawEverything g display
 
