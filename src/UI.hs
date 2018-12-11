@@ -52,7 +52,7 @@ data Cell = PacmanW PacmanData
           | PillW
           | WallW Char
           | SpaceW
-  deriving (Eq, Show)
+  deriving (Show)
 
 -- These are the windows that make up the App.
 data AppWindow = ScoreWindow
@@ -81,7 +81,7 @@ main = do
         writeBChan chan Tick
         threadDelay oneSixtyth  -- ticks are 1/60 of a second
     -- now initialse the game and call the ncurses loop
-    let g = initGame
+    let g = initGame 1
     ncursesMain chan g
 
 --

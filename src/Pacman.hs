@@ -79,12 +79,13 @@ data GhostRate
   deriving (Eq, Show)
 
 data GhostData = GhostData
-  { _ghostAt    :: Coord
-  , _ghostDir   :: Direction
-  , _ghostState :: GhostState
-  , _name       :: GhostPersonality
-  , _ghostTick  :: Int
-  } deriving (Eq, Show)
+  { _ghostAt         :: Coord
+  , _ghostDir        :: Direction
+  , _ghostState      :: GhostState
+  , _name            :: GhostPersonality
+  , _ghostTick       :: Int
+  , _ghostRandStdGen :: StdGen
+  } deriving (Show)
 
 type Coord = V2 Int
 
@@ -336,16 +337,17 @@ ghostDeadAt = V2 11 12
 
 
 -- | The initial game
-initGameIO :: IO Game
-initGameIO = return initGame
+initGameIO :: Int -> IO Game
+initGameIO = return . initGame
 
-initGame :: Game
-initGame
+initGame :: Int -> Game
+initGame seed
   = let m = initialMaze maze0
+        (ghostsSeed, stdGen) = random $ mkStdGen seed
         (h, w) = mazeHW m
         numPills = countPills maze0
      in Game           { _pacman = initialPacman
-                       , _ghosts = initialGhosts
+                       , _ghosts = resetGhosts ghostsSeed
                        , _ghostsMode = (Just initialHoldFrames, GhostsHold)
                        , _ghostsModes = gameModesForLevel 1
                        , _maze = m
@@ -359,17 +361,20 @@ initGame
                        , _score = 0
                        , _gameLevel = 1
                        , _livesLeft = 3
-                       , _randStdGen = mkStdGen 1 -- pass this from caller!
+                       , _randStdGen = stdGen -- pass this from caller!
                        }
 
-initialGhosts :: [GhostData]
-initialGhosts =
-    --          location   dir  state       name    ghostTick
-    [ GhostData (V2 11 11) West GhostHouse  Bashful 0
-    , GhostData (V2 11 13) West GhostNormal Speedy  0
-    , GhostData (V2  9 13) East GhostNormal Shadow  0
-    , GhostData (V2 11 15) East GhostHouse  Pokey   0
-    ]
+resetGhosts :: Int -> [GhostData]
+resetGhosts seed = map (\(c, g) -> c g) $ zip ghostIncompletConstructors stdGens
+  where
+      ghostIncompletConstructors =
+        --          location   dir  state       name    ghostTick
+        [ GhostData (V2 11 11) West GhostHouse  Bashful 1
+        , GhostData (V2 11 13) West GhostNormal Speedy  1
+        , GhostData (V2  9 13) East GhostNormal Shadow  1
+        , GhostData (V2 11 15) East GhostHouse  Pokey   1
+        ]
+      stdGens = map mkStdGen $ randoms (mkStdGen seed)
 
 -- | The initial Pac-man structure -- note that the pacTick is '1' because it
 -- decrements FIRST and then gets checked.
@@ -384,6 +389,7 @@ initialPacman = PacmanData (V2 17 13) Still Still False 1       0
 -- this is to allow the action to return a drawlist as well as the modified
 -- Game.
 
+
 -- | pauseAction -- pause and un-pause the game
 pauseAction :: Game -> DrawList Game
 pauseAction = return . pause
@@ -391,6 +397,7 @@ pauseAction = return . pause
 -- | pause and un-pause the game
 pause :: Game -> Game
 pause = paused %~ not
+
 
 -- | turnAction -- set up a turn for the user
 turnAction :: Direction -> Game -> DrawList Game
@@ -415,8 +422,8 @@ tickAction g =
     if g ^. paused
       then return g
       else (   decPacmanTick
-           >=> maybeUpdateGhostsMode
            >=> maybeDoPacman
+           >=> maybeUpdateGhostsMode
            ) g
 
 
@@ -435,12 +442,6 @@ stepPacman g =
 
 
 {-
-stepGhostsNormal, stepGhostsSpeedup1, stepGhostsSpeedup2, stepGhostsFlee :: Game -> Game
-stepGhostsNormal   = stepGhostsRate GhostRateNormal
-stepGhostsSpeedup1 = stepGhostsRate GhostRateSpeedup1
-stepGhostsSpeedup2 = stepGhostsRate GhostRateSpeedup2
-stepGhostsFlee     = stepGhostsRate GhostRateFlee
-
 stepGhostsRate :: GhostRate -> Game -> Game
 stepGhostsRate rate
   =   moveGhostsInRate rate
@@ -460,15 +461,6 @@ step =
 
 -- | move the pacman and check for the pill or powerup
 -- | invalidate the render cache if we moved (in movePacman)
-{-
-maybeDoPacman :: Game -> Game
-maybeDoPacman g
-  | not onTick = g
-  | otherwise = (movePacman >>> eatPillOrPowerUp) g
-  where
-    onTick = (g ^. (pacman . pacTick)) == 0
--}
-
 maybeDoPacman :: Game -> DrawList Game
 maybeDoPacman g
   | not onTick = return g
@@ -573,13 +565,6 @@ fleePacman g = if fleeTicks == 0
   where currentMode = g ^. ghostsMode
         fleeTicks = fleeFramesForLevel $ g ^. gameLevel
 
--- | simple chase strategy -- just chase for ticks -- no variation
---chasePacman :: Game -> GhostsMode
---chasePacman g = GhostChase $ ghostChaseForTicks + (g ^. gameTick)
-
--- | scatter from pacman -- just scatter for ticks -- no variation
---scatterFromPacman :: Game -> GhostsMode
---scatterFromPacman g = GhostScatter $ ghostScatterForTicks + (g ^. gameTick)
 
 -- | move the ghosts and check for pacman interface; but only if on tick.
 -- | invalidate the render cache if we moved
@@ -615,6 +600,7 @@ ghostsAreFleeing g = case g ^. ghostsMode of
 
 -- | eat a ghost.  We get 200 for the first, 400 for the second, 800 for the
 -- third and 1600 for the fourth with an extra bonus of 1200 for all 4.
+-- TODO: rewrite this without the ix
 eatGhost :: GhostData -> Game -> Game
 eatGhost gd g = g & score %~ scoref
                   & (ghosts . ix i . ghostState) .~ GhostDead
@@ -663,51 +649,57 @@ nextGhostsMode g = case g ^. ghostsModes of
 
 -- | move all the ghosts, one after another, but returning a function which does
 -- it
--- TODO: do we really want to do a fold; a map would be nicer
---  e.g.         & ghosts %~ map (ghostDir %~ reverseDirection)
+-- TODO: should this really be a traversal over the list of ghosts; i.e. not
+-- using a `map`
 moveGhosts :: Game -> Game
-moveGhosts g = foldr moveGhost g $ zip [0..] (g ^. ghosts)
+moveGhosts g = g & ghosts %~ map (moveGhost g)
 
-
-moveGhost :: (Int, GhostData) -> Game -> Game
-moveGhost gh@(i, gd) g = case g ^. ghostsMode of
-    (_, GhostsHold)     -> g
-    (_, GhostsChase)    -> moveGhostChase gh g
-    (_, GhostsScatter)  -> moveGhostScatter gh g
-    (_, GhostsFlee _)   -> moveGhostFlee gh g
-
-
-moveGhostChase :: (Int, GhostData) -> Game -> Game
-moveGhostChase _ g = g
-
-
-moveGhostScatter :: (Int, GhostData) -> Game -> Game
-moveGhostScatter _ g = g
-
-
-moveGhostFlee :: (Int, GhostData) -> Game -> Game
-moveGhostFlee _ g = g
-
-
--- TODO: delete this, but first we have to use the speedups, etc.
-{-
-isGhostOnTick :: GhostData -> Game -> Bool
-isGhostOnTick gd g
-  | fleeing = _ticks `rem` ticksPerGhostFleeing == 0
-  | otherwise = _ticks `rem` ticksPerGhost == 0
+-- | move the ghost if the ghostTick is decremented to 0, otherwise just return
+-- the decremented gd with the tick down.  Note the next tick is ONLY choosen if
+-- the ghost actually moves, although it may have changed direction.
+-- TODO still need to get the ghost OUT OF the ghost house
+moveGhost :: Game -> GhostData -> GhostData
+moveGhost g gd
+  | gmode == GhostsHold || gstate /= GhostNormal = gd
+  | _t > 0 = gd & ghostTick .~ _t
+  | isDecisionTime = newTickGd & makeDecision g gmode isYellowDecision
+  | otherwise = newTickGd & moveGhostNoDecision g
   where
-      fleeing = ghostsAreFleeing g
-      _ticks = g ^. gameTick
-      sPills = g ^. startPills
-      pillsEaton = sPills - (g ^. pillsLeft)
-      l1 = pillsEaton > (sPills * fst ghostSpeedUp1) `quot` snd ghostSpeedUp1
-      l2 = pillsEaton > (sPills * fst ghostSpeedUp2) `quot` snd ghostSpeedUp2
-      ticksPerGhost = case gd ^. name of
-          Shadow | l2 -> ticksPerGhostSpeedup2
-                 | l1 -> ticksPerGhostSpeedup1
-                 | otherwise -> ticksPerGhostNormal
-          _ -> ticksPerGhostNormal
--}
+      (_, gmode) = g ^. ghostsMode
+      gstate = gd ^. ghostState
+      _t = max 0 $ gd ^. ghostTick - 1
+      hw = gd ^. ghostAt
+      isGreenDecision = hw `elem` greenDecisionTiles
+      isYellowDecision = hw `elem` yellowDecisionTiles
+      isDecisionTime = isGreenDecision || isYellowDecision
+      newTickGd = gd & ghostTick .~ chooseGhostTick g gd
+
+
+-- yellowDecision is greenDecision but not heading north!
+-- | make a decision by picking a direction based on the ghostmode
+--
+makeDecision :: Game
+             -> GhostsState
+             -> Bool  -- if True, it's a yellow tile
+             -> GhostData
+             -> GhostData
+makeDecision g gmode isYellow gd
+  = if fleeing
+      then gd & ghostAt .~ hw
+              & ghostDir .~ dir
+              & ghostRandStdGen .~ gen'
+      else gd & ghostAt .~ hw'
+              & ghostDir .~ dir'
+ where
+    fleeing = ghostsAreFleeing g
+    f = if isYellow then filterOutNorth else id
+    possibleDirections = f $ possibleDecisionsAt g gd
+    ((dir, hw), gen') = chooseRandomFromList possibleDirections
+                                             (gd ^. ghostRandStdGen)
+    targetF = if gmode == GhostsScatter
+                then targetTileScatter
+                else targetTileChase
+    (dir', hw') = selectShortest (targetF g gd)  possibleDirections
 
 
 chooseGhostTick :: Game -> GhostData -> Int
@@ -789,13 +781,13 @@ yellowDecisionTiles = map (uncurry V2) [
 -- | Scatter mode
 -- | The target tiles are outside of the map, which causes the ghosts
 -- | to flee to the corners
-targetTileScatter :: GhostData -> Game -> Coord
-targetTileScatter gd g = case gd ^. name of
+targetTileScatter :: Game -> GhostData -> Coord
+targetTileScatter g gd = case gd ^. name of
     Speedy  -> V2 (-2) 2   -- Pink ghost (2 above 2 in from lhs)
     Shadow  ->
         if fastShadow
           && not (any ((==GhostHouse).(^. ghostState)) (g ^. ghosts))
-           then targetTileChase gd g  -- Shadow chases in scatter!
+           then targetTileChase g gd  -- Shadow chases in scatter!
            else V2 (-2) 24            -- Red ghost (2 above, 2 in from rhs)
     Bashful -> V2 23   26  -- Cyan ghost (1 bwlow, 0 in from rhs)
     Pokey   -> V2 23   0   -- Orange ghost (1 below, 0 in from lhs)
@@ -804,8 +796,8 @@ targetTileScatter gd g = case gd ^. name of
     fastShadow = (g ^. pillsLeft) < p1
 
 
-targetTileChase :: GhostData -> Game -> Coord
-targetTileChase gd g = case gd ^. name of
+targetTileChase :: Game -> GhostData -> Coord
+targetTileChase g gd = case gd ^. name of
     -- Pink Ghost = 4 frames in front of pacman
     Speedy  -> pacmanHw + 4 * pacmanDeltaHw
     -- Red ghost follows pacman
@@ -820,7 +812,7 @@ targetTileChase gd g = case gd ^. name of
                    deltaSquared = (dx * dx) + (dy * dy)
                 in if deltaSquared > 64  -- 8 tiles away means target pacman
                      then pacmanHw
-                     else targetTileScatter gd g -- otherwise to scatter tile
+                     else targetTileScatter g gd -- otherwise to scatter tile
   where
       pacmanHw = g ^. (pacman . pacAt)
       pacmanDeltaHw = deltaForDir $ g ^. (pacman . pacDir)
@@ -829,15 +821,15 @@ targetTileChase gd g = case gd ^. name of
 -- | move ghost, no decision
 -- | Essentially move "forward" in the current direction, unless there
 -- | is a wall.  If there is a wall then turn to the wall and change
--- | direction. Also invalidate the cache.
-moveGhostNoDecision :: (Int, GhostData) -> Game -> Game
-moveGhostNoDecision (i, gd) g
-  | notWillBeWall = g & (ghosts . ix i . ghostAt) .~ forwardHw
+-- | direction.
+moveGhostNoDecision :: Game -> GhostData -> GhostData
+moveGhostNoDecision g gd
+  | notWillBeWall = gd & ghostAt .~ forwardHw
   | otherwise     = if leftWillBeWall
-        then g & (ghosts . ix i . ghostAt) .~ rightOfHw
-               & (ghosts . ix i . ghostDir) .~ goRight
-        else g & (ghosts . ix i . ghostAt) .~ leftOfHw
-               & (ghosts . ix i . ghostDir) .~ goLeft
+        then gd & ghostAt .~ rightOfHw
+                & ghostDir .~ goRight
+        else gd & ghostAt .~ leftOfHw
+                & ghostDir .~ goLeft
     where
         dir = gd ^. ghostDir
         hw  = gd ^. ghostAt
@@ -850,22 +842,8 @@ moveGhostNoDecision (i, gd) g
         leftWillBeWall = checkForWall g leftOfHw
 
 
--- move ghost green decision
--- we've reached a decision point; for each mode, we may have to chose a  new
--- direction and square.
-
--- not sure about this; think we should have a range of decisions and then pass
--- those possible decisions to a single set of functions
---moveGhostGreenDecision :: (Int, GhostData) -> Game -> Game
---moveGhostGreenDecision gh@(i, gd) g = case g ^. ghostMode of
-      --GhostHold         -> g
-      --(GhostChase _)    -> moveGhostChaseGreenDecision gh g
-      --(GhostScatter  _) -> moveGhostScatterGreenDecision gh g
-      --(GhostFlee _)     -> moveGhostFleeGreenDecision gh g
-
-
-possibleDecisionsAt :: (Int, GhostData) -> Game -> [(Direction, Coord)]
-possibleDecisionsAt (_, gd) g
+possibleDecisionsAt :: Game -> GhostData -> [(Direction, Coord)]
+possibleDecisionsAt g gd
   = filter (not . checkForWall g . snd) $ zip dirs hws
   where
     dirs = directionsAt $ gd ^. ghostDir
@@ -873,8 +851,8 @@ possibleDecisionsAt (_, gd) g
     hws = [wrapAroundBoard g (hw + deltaForDir d) | d <- dirs]
 
 
-chooseShortest :: Coord -> [(Direction, Coord)] -> (Direction, Coord)
-chooseShortest (V2 x y) ps = snd $ head $ sortOn fst $ zip ms ps
+selectShortest :: Coord -> [(a, Coord)] -> (a, Coord)
+selectShortest (V2 x y) ps = snd $ head $ sortOn fst $ zip ms ps
   where
       ms = map (mag . snd) ps
       mag hw = let (V2 x1 y1) = hw
@@ -883,43 +861,17 @@ chooseShortest (V2 x y) ps = snd $ head $ sortOn fst $ zip ms ps
                 in xd * xd + yd * yd
 
 
-chooseTargetHw :: GhostData -> Game -> Coord
-chooseTargetHw gd g = case g ^. ghostsMode of
-    (_, GhostsHold)    -> error "Don't call chooseTargetHw in GhostHold mode!"
-    (_, GhostsChase)   -> targetTileChase gd g
-    (_, GhostsScatter) -> targetTileScatter gd g
-    (_, GhostsFlee _)  -> error "Don't call chooseTargetHw in GhostFlee mode!"
-
-
--- | choose a random direction from a selection of possible directions, but
--- | return the new generator as well.
-chooseRandomDir :: [Direction] -> StdGen -> (Direction, StdGen)
-chooseRandomDir [] _ = error "No directions passed so can't choose one!"
-chooseRandomDir ds gen =
+-- | Choose a random element from a list
+chooseRandomFromList :: [a] -> StdGen -> (a, StdGen)
+chooseRandomFromList [] _ = error "Empty list passed so can't choose element!"
+chooseRandomFromList ds gen =
     let (i, gen') = randomR (0, length ds -1) gen
         d = fromJust $ lookup i (zip [0..] ds)
     in (d, gen')
 
 
--- | make the fleeing decision for this ghost.
-makeFleeingDecision :: (Int, GhostData)
-                    -- ^ the index and GhostData for this ghost
-                    -> [Direction]
-                    -- ^ the list of allowable directions at this point
-                    -> Game
-                    -- ^ the Current game state that includes the random
-                    --   number generator state, which needs updating
-                    -> Game
-makeFleeingDecision gh@(i, gd) ds g =
-    let ps = filter ((`notElem` ds).fst) $ possibleDecisionsAt gh g
-        (d, newGen) = chooseRandomDir (map fst ps) (g ^. randStdGen)
-        hw = fromJust $ lookup d ps
-     in g & randStdGen .~ newGen
-          & (ghosts . ix i . ghostAt) .~ hw
-          & (ghosts . ix i . ghostDir) .~ d
-
-
-filterOutNorth :: [(Direction, Coord)] -> [(Direction, Coord)]
+-- | filter out the North direction for yellow decision tiles.
+filterOutNorth :: [(Direction, a)] -> [(Direction, a)]
 filterOutNorth = filter ((/=North).fst)
 
 
