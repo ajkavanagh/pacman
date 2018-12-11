@@ -804,7 +804,7 @@ targetTileChase g gd = case gd ^. name of
     Shadow  -> pacmanHw
     -- Cyan ghost does 2 * vector of red -> (pac + 2 in front)
     Bashful -> let twoTiles = pacmanHw + 2 * pacmanDeltaHw
-                   shadowGd = head $ filter ((==Bashful).(^.name)) $ g ^. ghosts
+                   shadowGd = head $ filter ((==Shadow).(^.name)) $ g ^. ghosts
                    shadowHw = shadowGd ^. ghostAt
                 in 2 * twoTiles - shadowHw
     -- Orange ghost
