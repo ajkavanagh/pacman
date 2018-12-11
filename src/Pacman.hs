@@ -678,6 +678,9 @@ moveGhost g gd
 -- yellowDecision is greenDecision but not heading north!
 -- | make a decision by picking a direction based on the ghostmode
 --
+-- TODO: rewrite this into two functions that so we don't have the dir' and hw'
+-- pairs -- i.e. they are really separate functions for fleeing and
+-- chase/scatter due to the random selection
 makeDecision :: Game
              -> GhostsState
              -> Bool  -- if True, it's a yellow tile
