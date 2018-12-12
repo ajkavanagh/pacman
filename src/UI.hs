@@ -96,7 +96,7 @@ ncursesMain chan initG = runCurses $ do
     sw <- newWindow 5 20 0 0
     setKeypad sw True
     gw <- newWindow (fromIntegral (mh+2)) (fromIntegral (mw+2)) 0 30
-    pwdebug <- newWindow 6 40 10 0
+    pwdebug <- newWindow 6 30 10 0
     updateWindow pwdebug clear
     let display =
             Display { windows = M.fromList
@@ -340,7 +340,7 @@ debugGameLines g =
       then
         [ "pillsLeft: " ++ show (g ^. pillsLeft)
         , "paused:    " ++ show (g ^. paused)
-        , "ghostsMode:" ++ show (g ^. ghostsMode)
+        , show (g ^. ghostsMode)
         , "gameover:  " ++ show (g ^. gameover)
         , "state:     " ++ show (g ^. state)
         , "score:     " ++ show (g ^. score)

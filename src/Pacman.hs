@@ -5,7 +5,7 @@ module Pacman where
 
 import           Control.Arrow       ((>>>))
 import           Control.Applicative ((<|>))
-import           Control.Monad       (guard, when, unless, (>=>))
+import           Control.Monad       (guard, when, unless, (>=>), forM_)
 import           Control.Monad.Trans.Writer.Strict (Writer, tell)
 import           Data.Maybe          (fromMaybe, fromJust)
 import           Data.Vector         (Vector)
@@ -14,7 +14,7 @@ import           Data.List           (findIndex)
 import           Data.DList          (DList, singleton)
 import           Data.Sort           (sortOn)
 
-import           Lens.Micro          ((%~), (&), (.~), (^.), each)
+import           Lens.Micro          ((%~), (&), (.~), (^.), (^..), each, over)
 import           Lens.Micro.TH       (makeLenses)
 import           Linear.V2           (V2 (..), _x, _y)
 import           System.Random       (Random (..), newStdGen, StdGen, mkStdGen, randomR)
@@ -197,7 +197,7 @@ pillChar = '.'
 
 -- |"New" ghost rates and speed ups.
 framesPerSecond = 60.0
-base100frames = 20.0
+base100frames = 10.0
 
 percentToFrames :: Float -> Int
 percentToFrames t = round $ f / ((f/base100frames) *t)
@@ -370,7 +370,7 @@ resetGhosts seed = map (\(c, g) -> c g) $ zip ghostIncompletConstructors stdGens
       ghostIncompletConstructors =
         --          location   dir  state       name    ghostTick
         [ GhostData (V2 11 11) West GhostHouse  Bashful 1
-        , GhostData (V2 11 13) West GhostNormal Speedy  1
+        , GhostData (V2 11 13) West GhostHouse  Speedy  1
         , GhostData (V2  9 13) East GhostNormal Shadow  1
         , GhostData (V2 11 15) East GhostHouse  Pokey   1
         ]
@@ -417,6 +417,8 @@ turn d g = if (dir /= Still) && checkForWall g hw'
 
 -- | tickAction -- everything we have to do when it ticks.  Everything called
 -- <something>Action returns a Writer Monad.
+-- TODO: combine decPacmanTick and maybeDoPacman -- no need for them to be
+-- separate.
 tickAction :: Game -> DrawList Game
 tickAction g =
     if g ^. paused
@@ -424,6 +426,7 @@ tickAction g =
       else (   decPacmanTick
            >=> maybeDoPacman
            >=> maybeUpdateGhostsMode
+           >=> moveGhostsAction
            ) g
 
 
@@ -461,6 +464,7 @@ step =
 
 -- | move the pacman and check for the pill or powerup
 -- | invalidate the render cache if we moved (in movePacman)
+-- TODO: rename to maybeDoPacmanAction
 maybeDoPacman :: Game -> DrawList Game
 maybeDoPacman g
   | not onTick = return g
@@ -625,10 +629,11 @@ eatenByGhost g = g & gameover .~ True
 -- | see if we choose the next ghost mode
 -- Essentially, count down the mode and if zero, pick the next one, unless we
 -- are already at the last one (GhostChase Nothing)
+-- TODO: rename to maybeUpdateGhostsModeAction
 maybeUpdateGhostsMode :: Game -> DrawList Game
 maybeUpdateGhostsMode g = case g ^. ghostsMode of
     (Nothing, _) -> return g
-    (Just 1, m) ->
+    (Just 0, m) ->
         case m of
             (GhostsFlee oldMode) -> do
                 redrawGhosts g
@@ -637,6 +642,7 @@ maybeUpdateGhostsMode g = case g ^. ghostsMode of
                   in return $
                       g & ghostsMode .~ newMode
                         & ghostsModes .~ modesLeft
+                        & ghosts . each %~ ghostDir %~ reverseDirection
     (Just n, m) -> return $ g & ghostsMode .~ (Just (n-1), m)
 
 
@@ -647,9 +653,23 @@ nextGhostsMode g = case g ^. ghostsModes of
 
 
 -- | move all the ghosts, one after another, but returning a function which does
--- it
-moveGhosts :: Game -> Game
-moveGhosts g = g & ghosts . each %~ moveGhost g
+-- it.  This is an action, and it's really, really hard to move the monad into
+-- moveGhost, but I like how moveGhost is an applicative lens traversal.
+-- Therefore, we cheat a bit and just diff the positions of the ghosts before an
+-- after the possible move and then draw them if they have moved.  It's a bit
+-- wasteful, and it would be nice if I could push the monad into moveGhost, but
+-- then I think I'd need a different approach.
+moveGhostsAction :: Game -> DrawList Game
+moveGhostsAction g = do
+    let hws = g ^.. (ghosts . each . ghostAt)
+        g' = g & ghosts . each %~ moveGhost g
+        hws' = g' ^.. (ghosts . each . ghostAt)
+        diffHws = filter (uncurry (/=)) $ zip hws hws'
+    forM_ diffHws $ \(x, y) -> do
+        addDrawListItem $ DrawGridAt x
+        addDrawListItem $ DrawGridAt y
+    return g'
+
 
 -- | move the ghost if the ghostTick is decremented to 0, otherwise just return
 -- the decremented gd with the tick down.  Note the next tick is ONLY choosen if
