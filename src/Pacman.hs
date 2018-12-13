@@ -340,6 +340,7 @@ ghostDeadAt = V2 11 12
 initGameIO :: Int -> IO Game
 initGameIO = return . initGame
 
+
 initGame :: Int -> Game
 initGame seed
   = let m = initialMaze maze0
@@ -361,7 +362,7 @@ initGame seed
                        , _score = 0
                        , _gameLevel = 1
                        , _livesLeft = 3
-                       , _randStdGen = stdGen -- pass this from caller!
+                       , _randStdGen = stdGen
                        }
 
 resetGhosts :: Int -> [GhostData]
@@ -417,15 +418,12 @@ turn d g = if (dir /= Still) && checkForWall g hw'
 
 -- | tickAction -- everything we have to do when it ticks.  Everything called
 -- <something>Action returns a Writer Monad.
--- TODO: combine decPacmanTick and maybeDoPacman -- no need for them to be
--- separate.
 tickAction :: Game -> DrawList Game
 tickAction g =
     if g ^. paused
       then return g
-      else (   decPacmanTick
-           >=> maybeDoPacman
-           >=> maybeUpdateGhostsMode
+      else (   maybeDoPacmanAction
+           >=> maybeUpdateGhostsModeAction
            >=> moveGhostsAction
            ) g
 
@@ -462,21 +460,15 @@ step =
 -}
 
 
--- | move the pacman and check for the pill or powerup
--- | invalidate the render cache if we moved (in movePacman)
--- TODO: rename to maybeDoPacmanAction
-maybeDoPacman :: Game -> DrawList Game
-maybeDoPacman g
-  | not onTick = return g
-  | otherwise = (movePacmanAction >=> eatPillOrPowerUpAction) g
+-- | Decrement the tick and move the pacman if it has reached zero.  Also
+-- check for the pill or powerup
+maybeDoPacmanAction :: Game -> DrawList Game
+maybeDoPacmanAction g
+  | not onTick = return g'
+  | otherwise = (movePacmanAction >=> eatPillOrPowerUpAction) g'
   where
-    onTick = (g ^. (pacman . pacTick)) == 0
-
-
--- | Decrement the pacTick (when to move the pacman). Note, we only increement
--- the pacAnimate tick when we move.
-decPacmanTick :: Game -> DrawList Game
-decPacmanTick g = return $ g & (pacman . pacTick) %~ pred
+    g' = g & (pacman . pacTick) %~ (\t -> max 0 $ t - 1)
+    onTick = (g' ^. (pacman . pacTick)) == 0
 
 
 -- move the pacman until he hits a wall
@@ -629,9 +621,8 @@ eatenByGhost g = g & gameover .~ True
 -- | see if we choose the next ghost mode
 -- Essentially, count down the mode and if zero, pick the next one, unless we
 -- are already at the last one (GhostChase Nothing)
--- TODO: rename to maybeUpdateGhostsModeAction
-maybeUpdateGhostsMode :: Game -> DrawList Game
-maybeUpdateGhostsMode g = case g ^. ghostsMode of
+maybeUpdateGhostsModeAction :: Game -> DrawList Game
+maybeUpdateGhostsModeAction g = case g ^. ghostsMode of
     (Nothing, _) -> return g
     (Just 0, m) ->
         case m of
