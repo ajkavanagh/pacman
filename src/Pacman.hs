@@ -518,7 +518,7 @@ eatPillOrPowerUpAction g
         & maze  %~ (`mazeClearAt` hw)
         & (pacman . pacTick) .~ choosePacTick g EatenPill
   | c == powerupChar = do
-      redrawGhosts g
+      redrawGhostsAction g
       addDrawListItem DrawScore
       return $ g
         & score %~ (+50)
@@ -532,8 +532,8 @@ eatPillOrPowerUpAction g
 
 
 -- | redraw all the ghosts - probably due to a mode change.
-redrawGhosts :: Game -> DrawList ()
-redrawGhosts g =
+redrawGhostsAction :: Game -> DrawList ()
+redrawGhostsAction g =
     mapM_ (\gd -> addDrawListItem (DrawGridAt (gd ^. ghostAt))) (g ^. ghosts)
 
 
@@ -627,7 +627,7 @@ maybeUpdateGhostsModeAction g = case g ^. ghostsMode of
     (Just 0, m) ->
         case m of
             (GhostsFlee oldMode) -> do
-                redrawGhosts g
+                redrawGhostsAction g
                 return $ g & ghostsMode .~ oldMode
             _ -> let (newMode, modesLeft) = nextGhostsMode g
                   in return $
