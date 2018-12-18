@@ -18,11 +18,12 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * DONE - Getting the ghost out of the ghost house - animation, states
 * Getting the ghost back to the ghost house
 * DONE - Losing a life
-* Starting a game (press 's' to start)
-* Game over
+* DONE - Starting a game (press 's' to start)
+* DONE - Game over
 * DONE - Pause the game key
 * Animation whilst waiting to start the game.
 * Resolving the `display` 'reader' in the UI section
+* Sorting out the random number generator in IO monad and passing it to the main display
 
 ## DONE - Getting a ghost out of the house (animation)
 
@@ -53,20 +54,20 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 
 ## Starting a game (s)
 
-* "Press 's' to start
+* DONE - "Press 's' to start
 * DONE - Game state is `NotStarted` -> no ticks (like paused) -- it's also the demo state if we get that going (ever)
-* Game state could be `GameOver n` if the game over timer is still running.
-* Keys don't make sense apart from `q` for quit.
+* DONE - Game state could be `GameOver n` if the game over timer is still running.
+* DONE - Keys don't make sense apart from `q` for quit.
 * Pressing 's' resets the game from the Random Number generator.  This presents a problem as it is in the `Game` variable, and we want to fix that for demos.  Probably need to wrap `Curses` with a `StateT` so that we can keep the random generator outside of the `Game` state.
 
 ## Game over
 
-* When we've lost all the lives, the game needs to end, and transfer the score to the high-score.  Another 'overarching' state is required for the game (probably in the UI) to hold the high score and the random number generator.
-* The ghosts continue to animate for a period. This implies that `GameOver` has a timer that counts up or down, and when complete reverts to `NotStarted`
-* Remove the `_gameover` member of `Game` as that is covered better by `GameState`.
-* Pacman is `dying`, but rename it as `pacDead`.  If out of lives, then it never moves on from this state, and thus doesn't get redrawn.
-* Need a way of keeping Pacman OFF the display?
-* Transition to `NotStarted` needs to be the same as at the initialise for the game (e.g. flash press 's' to start, etc.)
+* DONE - When we've lost all the lives, the game needs to end, and transfer the score to the high-score.  Another 'overarching' state is required for the game (probably in the UI) to hold the high score and the random number generator.
+* DONE - The ghosts continue to animate for a period. This implies that `GameOver` has a timer that counts up or down, and when complete reverts to `NotStarted`
+* DONE - Remove the `_gameover` member of `Game` as that is covered better by `GameState`.
+* DONE - Pacman is `dying`, but rename it as `pacDead`.  If out of lives, then it never moves on from this state, and thus doesn't get redrawn.
+* DONE - Need a way of keeping Pacman OFF the display?
+* DONE - Transition to `NotStarted` needs to be the same as at the initialise for the game (e.g. flash press 's' to start, etc.)
 
 ## Animation whilst waiting to start the game
 
