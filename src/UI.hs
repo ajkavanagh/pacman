@@ -137,12 +137,17 @@ handleEvent ev g d = case mapEvent ev of
 
 mapEvent :: Event -> Maybe (Game -> DrawList Game)
 mapEvent (EventSpecialKey KeyUpArrow)    = Just $ turnAction North
+mapEvent ev | isEventChars "kK" ev       = Just $ turnAction North
 mapEvent (EventSpecialKey KeyRightArrow) = Just $ turnAction East
+mapEvent ev | isEventChars "lL" ev       = Just $ turnAction East
 mapEvent (EventSpecialKey KeyDownArrow)  = Just $ turnAction South
+mapEvent ev | isEventChars "jJ" ev       = Just $ turnAction South
 mapEvent (EventSpecialKey KeyLeftArrow)  = Just $ turnAction West
+mapEvent ev | isEventChars "hH" ev       = Just $ turnAction West
 mapEvent ev | isEventChars "dD" ev       = Just   debugDieAction
 -- TODO: need to access the random number generator here!
 mapEvent ev | isEventChars "sS" ev       = Just $ startAction (initGame 1)
+mapEvent ev | isEventChars "pP" ev       = Just   pauseAction
 mapEvent _ = Nothing
 
 --

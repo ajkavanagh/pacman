@@ -20,7 +20,7 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * DONE - Losing a life
 * Starting a game (press 's' to start)
 * Game over
-* Pause the game key
+* DONE - Pause the game key
 * Animation whilst waiting to start the game.
 * Resolving the `display` 'reader' in the UI section
 
@@ -28,7 +28,6 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 
 * DONE - New state `GhostLeavingHouse` -- the ghost traces a path from their location to immediately above the ghost house at a pre-determined rate.
 * DONE - We ensure the ghosts are in the house in the leaving order (213) where 1 = Pinky, 2 = Inky, 3 = clyde
-* We don't animate the ghosts back and forwards in the house (yet).
 * DONE - Use the `ghostNorm ratesForLevel g ^. gameLevel` ticks for each move
 * DONE - Just track to the centre, and then go up to the exit spot; then move as per the `GhostNormal` ghosts (i.e they are out and about).
 * DONE - Ghost's can't leave the house whilst fleeing.
@@ -42,7 +41,7 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * The decisions will all be automated.  The first will be shortest to get the 'eyes' going, and thereafter, every decision point will be from a lookup table, which we just have to work out beforehand.
 * Normal rules for getting the ghost out then apply (dot counts, etc.)
 
-## Losing a life
+## DONE - Losing a life
 
 * DONE - Animate losing a life (already done)
 * DONE - Enable global dot count to 0
