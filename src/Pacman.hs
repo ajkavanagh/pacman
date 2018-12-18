@@ -16,7 +16,7 @@ import           Data.Sort           (sortOn)
 import           Data.Map            (Map)
 import qualified Data.Map            as M
 
-import           Lens.Micro          ((%~), (&), (.~), (^.), (^..)
+import           Lens.Micro          ((%~), (&), (.~), (^.), (^..), (?~)
                                      , ix, each, over)
 import           Lens.Micro.TH       (makeLenses)
 import           Linear.V2           (V2 (..), _x, _y)
@@ -31,7 +31,6 @@ data Game = Game
   , _maze            :: Maze
   , _mazeHeight      :: Int
   , _mazeWidth       :: Int
-  , _gameover        :: Bool
   , _gameState       :: GameState
   , _pillsLeft       :: Int
   , _paused          :: Bool
@@ -48,7 +47,7 @@ data PacmanData = PacmanData
   { _pacAt        :: Coord
   , _pacDir       :: Direction
   , _pacNextDir   :: Direction
-  , _dying        :: Bool
+  , _pacDying     :: Bool
   , _pacTick      :: Int
   , _pacAnimate   :: Int
   } deriving (Eq, Show)
@@ -382,6 +381,7 @@ initialHoldFrames = round framesPerSecond * initialHoldSeconds
 ghostDeadAt = V2 11 12 -- TODO: delete this for GhostGoingHome state
 ghostHouseExitCoord = V2 9 13
 
+dyingComplete = length pacmanDiesChars * 2
 
 -- | The initial game
 initGameIO :: Int -> IO Game
@@ -394,14 +394,13 @@ initGame seed
         (ghostsSeed, stdGen) = random $ mkStdGen seed
         (h, w) = mazeHW m
         numPills = countPills maze0
-     in Game           { _pacman = initialPacman
+     in Game           { _pacman = resetPacman
                        , _ghosts = resetGhosts ghostsSeed
                        , _ghostsMode = (Just initialHoldFrames, GhostsHold)
                        , _ghostsModes = gameModesForLevel 1
                        , _maze = m
                        , _mazeHeight = h
                        , _mazeWidth = w
-                       , _gameover = False
                        , _gameState = NotStarted
                        , _pillsLeft = numPills
                        , _paused = False
@@ -428,8 +427,8 @@ resetGhosts seed = map (\(c, g) -> c g) $ zip ghostIncompletConstructors stdGens
 -- | The initial Pac-man structure -- note that the pacTick is '1' because it
 -- decrements FIRST and then gets checked.
 --                         location   dir   next  dying pacTick pacAnimate
-initialPacman :: PacmanData
-initialPacman = PacmanData (V2 17 13) Still Still False 1       0
+resetPacman :: PacmanData
+resetPacman = PacmanData (V2 17 13) Still Still False 1       0
 
 
 -- ACTIONS from the UI. i.e. turn, pause, processTick
@@ -532,10 +531,42 @@ step =
 maybeDoPacmanAction :: Game -> DrawList Game
 maybeDoPacmanAction g
   | not onTick = return g'
+  | isDying    = whilstDyingAction g'
   | otherwise = (movePacmanAction >=> eatPillOrPowerUpAction) g'
   where
     g' = g & (pacman . pacTick) %~ (\t -> max 0 $ t - 1)
     onTick = (g' ^. (pacman . pacTick)) == 0
+    isDying = g' ^. pacman . pacDying
+
+
+-- | whilstDyingAction -- keep the display updated for each animate tick
+-- whilst the pacman is dying.  After a timer is expired (pacAnimate reaches
+-- some value), then reset the game state for the next life.
+whilstDyingAction :: Game -> DrawList Game
+whilstDyingAction g
+  -- not dead yet; so keep animating
+  | _t < dyingComplete = do
+      addDrawListItem $ DrawGridAt $ g ^. pacman . pacAt
+      return $ g & (pacman . pacAnimate) %~ succ
+                 & (pacman . pacTick) .~ choosePacTick g EatenNothing
+  -- Game over -- the game is done, so just leave it animating the ghosts
+  | remainingLives == 0 = do
+      addDrawListItem DrawEverything
+      return $ g & gameState .~ GameOver
+  -- we've lost a life, so reset pacman, the ghosts, and enable the global
+  -- pill count to get ghosts out of the house
+  | otherwise = do
+      addDrawListItem DrawEverything
+      return $ g & livesLeft .~ remainingLives
+                 & pacman .~ resetPacman             -- tell pacman where to go
+                 & ghosts .~ resetGhosts ghostsSeed  -- put ghosts back in the house
+                 & framesSincePill .~ 0              -- reset global frames since pill
+                 & globalPillCount ?~ 0              -- Set to Just 0, to activate global counter
+                 & randStdGen .~ newStdGen
+  where
+      _t = (g ^. pacman . pacAnimate) + 1
+      remainingLives = (g ^. livesLeft) - 1
+      (ghostsSeed, newStdGen) = random $ g ^. randStdGen
 
 
 -- move the pacman until he hits a wall
@@ -681,12 +712,11 @@ killGhost p gd
   | otherwise       = gd
 
 
--- | TODO Eaten by a ghost -- essentially, we have died.  We need to allow time for
+-- | Eaten by a ghost -- essentially, we have died.  We need to allow time for
 -- the animation (a timer) and then proceed to losing the life, reseting the
--- ghosts and carrying on.
+-- ghosts and carrying on.  This is handled in the whilstDyingAction function
 eatenByGhost :: Game -> Game
-eatenByGhost g = g & gameover .~ True
-                   & (pacman . dying) .~ True
+eatenByGhost g = g & (pacman . pacDying) .~ True
                    & (pacman . pacAnimate) .~ 0
 
 

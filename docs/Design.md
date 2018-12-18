@@ -45,18 +45,18 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 
 ## Losing a life
 
-* Animate losing a life (already done)
-* Enable global dot count to 0
-* Drop lives by 1
-* Reset ghosts
-* Update display
-* Reset pacman position
-* Need a timer (using `pacTick`) to count to the next life (or when it hits zero to just stay at zero if all lives are over).
+* DONE - Animate losing a life (already done)
+* DONE - Enable global dot count to 0
+* DONE - Drop lives by 1
+* DONE - Reset ghosts
+* DONE - Update display
+* DONE - Reset pacman position
+* DONE - Need a timer (using `pacAnimate`) to count to the next life (or when it hits zero to just stay at zero if all lives are over).
 
 ## Starting a game (s)
 
 * "Press 's' to start
-* Game state is `NotStarted` -> no ticks (like paused) -- it's also the demo state if we get that going (ever)
+* DONE - Game state is `NotStarted` -> no ticks (like paused) -- it's also the demo state if we get that going (ever)
 * Game state could be `GameOver n` if the game over timer is still running.
 * Keys don't make sense apart from `q` for quit.
 * Pressing 's' resets the game from the Random Number generator.  This presents a problem as it is in the `Game` variable, and we want to fix that for demos.  Probably need to wrap `Curses` with a `StateT` so that we can keep the random generator outside of the `Game` state.

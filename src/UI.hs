@@ -331,7 +331,7 @@ debugPacmanLines g =
         [ "pacAt:      " ++ show (p ^. pacAt)
         , "pacDir:     " ++ show (p ^. pacDir)
         , "pacNextDir: " ++ show (p ^. pacNextDir)
-        , "dying:      " ++ show (p ^. dying)
+        , "dying:      " ++ show (p ^. pacDying)
         , "pacAnimate: " ++ show (p ^. pacAnimate)
         , "pacTick:    " ++ show (p ^. pacTick)
         ]
@@ -346,7 +346,6 @@ debugGameLines g =
         [ "pillsLeft: " ++ show (g ^. pillsLeft)
         , "paused:    " ++ show (g ^. paused)
         , show (g ^. ghostsMode)
-        , "gameover:  " ++ show (g ^. gameover)
         , "state:     " ++ show (g ^. gameState)
         , "score:     " ++ show (g ^. score)
         , "pill f:    " ++ show (g ^. framesSincePill)
@@ -433,7 +432,7 @@ strForPacman :: PacmanData -> String
 strForPacman p = st
   where
     (V2 h w) = p ^. pacAt
-    st = if p ^. dying
+    st = if p ^. pacDying
       then if _t >= length pacmanDiesChars
              then " "
              else [pacmanDiesChars !! _t]
