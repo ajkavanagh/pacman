@@ -405,7 +405,7 @@ debugGhostLines :: Game -> [String]
 debugGhostLines g =
     if showGhostDebug
       then
-        [ "ghost:     " ++ show (gd ^. name)
+        [ "ghost:     " ++ show (gd ^. ghostName)
         , "state:     " ++ show (gd ^. ghostState)
         , "tick:      " ++ show (gd ^. ghostTick)
         , "pill #     " ++ show (gd ^. ghostPillCount)
@@ -491,14 +491,14 @@ strForPacman p = st
 
 
 ghostAttrAndStr :: GhostData -> Bool -> (Attr, String)
-ghostAttrAndStr gd fleeing = (ghAttr, "M")
+ghostAttrAndStr gd fleeing = (ghAttr, st)
   where
-    dead = gd ^. ghostState == GhostDead
-    st   = if dead then "" else "M"
+    eyes = gd ^. ghostState `elem` [GhostGoingHome, GhostEnteringHouse]
+    st   = if eyes then "\"" else "M"
     (V2 h w) = gd ^. ghostAt
     ghAttr = if fleeing
                then GhostFleeAttr
-               else case gd ^. name of
+               else case gd ^. ghostName of
         Shadow  -> GhostShadowAttr
         Bashful -> GhostBashfulAttr
         Speedy  -> GhostSpeedyAttr

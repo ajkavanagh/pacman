@@ -4,7 +4,7 @@
 module Pacman where
 
 import           Control.Arrow       ((>>>))
-import           Control.Applicative ((<|>))
+import           Control.Applicative ((<|>), liftA2)
 import           Control.Monad       (guard, when, unless, (>=>), forM_)
 import           Control.Monad.Trans.Writer.Strict (Writer, tell)
 import           Data.Maybe          (fromMaybe, fromJust, isJust)
@@ -70,8 +70,9 @@ type GhostsMode = (Maybe Int, GhostsState)
 
 data GhostState
   = GhostHouse
-  | GhostLeavingHouse
-  | GhostDead
+  | GhostLeavingHouse   -- get the ghost out, 1 step at a time
+  | GhostEnteringHouse  -- get the eyes back in, 1 step at a time
+  | GhostGoingHome
   | GhostNormal
   deriving (Eq, Show)
 
@@ -86,7 +87,7 @@ data GhostData = GhostData
   { _ghostAt         :: Coord
   , _ghostDir        :: Direction
   , _ghostState      :: GhostState
-  , _name            :: GhostPersonality
+  , _ghostName       :: GhostPersonality
   , _ghostTick       :: Int
   , _ghostPillCount  :: Int
   , _ghostRandStdGen :: StdGen
@@ -383,7 +384,6 @@ incGlobalPillCount g
 
 initialHoldSeconds = 3
 initialHoldFrames = round framesPerSecond * initialHoldSeconds
-ghostDeadAt = V2 11 12 -- TODO: delete this for GhostGoingHome state
 ghostHouseExitCoord = V2 9 13
 
 gameOverSeconds = 10
@@ -424,13 +424,23 @@ resetGhosts :: Int -> [GhostData]
 resetGhosts seed = map (\(c, g) -> c g) $ zip ghostIncompletConstructors stdGens
   where
       ghostIncompletConstructors =
-        --          location   dir  state       name    ghostTick ghostPillCount
-        [ GhostData (V2 11 11) West GhostHouse  Bashful 1         0
-        , GhostData (V2 11 13) West GhostHouse  Speedy  1         0
-        , GhostData (V2  9 13) East GhostNormal Shadow  1         0
-        , GhostData (V2 11 15) East GhostHouse  Pokey   1         0
+        --          location   dir  state       ghostName ghostTick ghostPillCount
+        [ GhostData (V2 11 11) West GhostHouse  Bashful   1         0
+        , GhostData (V2 11 13) West GhostHouse  Speedy    1         0
+        , GhostData (V2  9 13) East GhostNormal Shadow    1         0
+        , GhostData (V2 11 15) East GhostHouse  Pokey     1         0
         ]
       stdGens = map mkStdGen $ randoms (mkStdGen seed)
+
+hwForGhostInHouse :: GhostPersonality -> Coord
+hwForGhostInHouse Bashful = V2 11 11
+hwForGhostInHouse Speedy  = V2 11 13
+hwForGhostInHouse Shadow  = V2 11 12
+hwForGhostInHouse Pokey   = V2 11 15
+
+goingHomeStepRate = 0.2
+goingHomeRateFrames = round $ framesPerSecond * goingHomeStepRate
+
 
 -- | The initial Pac-man structure -- note that the pacTick is '1' because it
 -- decrements FIRST and then gets checked.
@@ -511,6 +521,7 @@ tickAction g
             return $ g & gameState .~ NotStarted
   | otherwise = (   incPillTimerAction
                 >=> maybeDoPacmanAction
+                >=> eatGhostOrBeEatenAction
                 >=> maybeUpdateGhostsModeAction
                 >=> seeIfGhostShouldLeaveHouseAction
                 >=> moveGhostsAction
@@ -525,34 +536,6 @@ tickAction g
 
 -- Just step the game forward one tick
 -- TODO: is game over (i.e. eaten all pills)
-{-
-stepPacman :: Game -> Game
-stepPacman g =
-    if g ^. paused
-      then g
-      else (   decPacmanTick
-           >>> maybeUpdateGhostsMode   -- update the ghost mode based on game ticks
-           >>> maybeDoPacman
-           >>> eatGhostOrBeEaton) g
--}
-
-
-{-
-stepGhostsRate :: GhostRate -> Game -> Game
-stepGhostsRate rate
-  =   moveGhostsInRate rate
-  >>> eatGhostOrBeEaton
--}
-
--- TODO: delete this as it's no longer used
-{-
-step :: Game -> Game
-step =
-    maybeDoPacman
-  . eatGhostOrBeEaton
-  . moveGhosts
-  . maybeUpdateGhostsMode
--}
 
 
 -- | Decrement the tick and move the pacman if it has reached zero.  Also
@@ -692,27 +675,23 @@ fleePacman g = if fleeTicks == 0
         fleeTicks = fleeFramesForLevel $ g ^. gameLevel
 
 
--- | move the ghosts and check for pacman interface; but only if on tick.
--- | invalidate the render cache if we moved
--- | TODO: delete this as no longer needed
-{-
-maybeDoGhosts :: Game -> Game
-maybeDoGhosts g
-  | not onTick = g
-  | otherwise = (eatPillOrPowerUp . moveGhosts) g
-  where
-    onTick = (g ^. gameTick) `rem` ticksPerPacman == 0
--}
+eatGhostOrBeEatenAction :: Game -> DrawList Game
+eatGhostOrBeEatenAction = return . eatGhostOrBeEaten
 
-
-eatGhostOrBeEaton :: Game -> Game
-eatGhostOrBeEaton g = case (null ghs, fleeing) of
+-- | eatGhostOrBeEaten
+-- We can only be eaten or eat a ghost if it's not GhostGoingHome
+eatGhostOrBeEaten :: Game -> Game
+eatGhostOrBeEaten g = case (null ghs, fleeing) of
     (True, _)      -> g
     (False, True)  -> eatGhost (head ghs) g
-    (False, False) -> eatenByGhost g
+    --(False, False) -> eatenByGhost g
+    (False, False) -> eatGhost (head ghs) g  -- invulnerable!
   where
       xy = g ^. pacman . pacAt
-      ghs = filter ((==xy).(^. ghostAt)) $ g ^. ghosts
+      isAt = (==xy) . (^.ghostAt)
+      isNotEyes = (/=GhostGoingHome) . (^.ghostState)
+      canCollide = liftA2 (&&) isAt isNotEyes
+      ghs = filter canCollide $ g ^. ghosts
       fleeing = ghostsAreFleeing g
 
 
@@ -726,9 +705,9 @@ ghostsAreFleeing g = case g ^. ghostsMode of
 -- third and 1600 for the fourth with an extra bonus of 1200 for all 4.
 eatGhost :: GhostData -> Game -> Game
 eatGhost gd g = g & score %~ scoref
-                  & ghosts . each %~ killGhost (gd ^. name)
+                  & ghosts . each %~ killGhost (gd ^. ghostName)
   where
-    numDead = length $ filter ((==GhostDead).(^.ghostState)) $ g ^. ghosts
+    numDead = length $ filter ((/=GhostNormal).(^.ghostState)) $ g ^. ghosts
     ghostScore = (2 ^ numDead) * 200
     bonusScore = if numDead == 3 then 1200 else 0
     scoref n = n + ghostScore + bonusScore
@@ -737,9 +716,8 @@ eatGhost gd g = g & score %~ scoref
 -- | kill the ghost with the name
 killGhost :: GhostPersonality -> GhostData -> GhostData
 killGhost p gd
-  | p == gd ^. name = gd & ghostState .~ GhostDead
-                         & ghostAt .~ ghostDeadAt
-  | otherwise       = gd
+  | p == gd ^. ghostName = gd & ghostState .~ GhostGoingHome
+  | otherwise            = gd
 
 
 -- | Eaten by a ghost -- essentially, we have died.  We need to allow time for
@@ -790,14 +768,14 @@ maybeAddGhostPillCount g
   where
       fleeing = ghostsAreFleeing g
       gcounter = g ^. globalPillCount
-      gds = ghostsInTheHouse g
+      gds = ghostsInState [GhostHouse] g
       i  = if null gds then Nothing else Just $ (fst . head) gds
 
 
-ghostsInTheHouse :: Game -> [(Int, GhostData)]
-ghostsInTheHouse g =
-    sortOn (fromEnum.(^.name).snd)
-    $ filter ((==GhostHouse).(^.ghostState).snd) -- TODO: add GhostGoingHome state here.
+ghostsInState :: [GhostState] -> Game -> [(Int, GhostData)]
+ghostsInState ss g =
+    sortOn (fromEnum.(^.ghostName).snd)
+    $ filter ((`elem` ss).(^.ghostState).snd)
     $ zip [0..] (g ^. ghosts)
 
 -- | Check to see if we've reach the globalDot count for a ghost.
@@ -805,7 +783,8 @@ ghostsInTheHouse g =
 isGlobalPillCountReachedForGhost :: (Int, GhostData) -> Game -> Game
 isGlobalPillCountReachedForGhost (i, gd) g = fromMaybe g maybeLeaving
   where
-      threashold = case gd ^. name of
+      threashold = case gd ^. ghostName of
+          Shadow -> 0       -- "Shadow" just leaves
           Speedy -> 7       -- "Pinky" is PINK
           Bashful -> 17     -- "Inky" is CYAN
           Pokey -> 32       -- "Clyde" is ORANGE
@@ -814,7 +793,7 @@ isGlobalPillCountReachedForGhost (i, gd) g = fromMaybe g maybeLeaving
       maybeLeaving = do
           c <- g ^. globalPillCount
           if c == threashold
-            then Just $ if gd ^. name == Pokey
+            then Just $ if gd ^. ghostName == Pokey
                           then g & ghostIsToLeave & resetGlobalCounter
                           else g & ghostIsToLeave
             else Nothing
@@ -835,7 +814,7 @@ seeIfGhostShouldLeaveHouseAction g
                                Just _   -> isGlobalPillCountReachedForGhost (head gds) g
                                Nothing  -> isIndividualPillCountReached (head gds) g
   where
-      gds = ghostsInTheHouse g
+      gds = ghostsInState [GhostHouse] g
       fleeing = ghostsAreFleeing g
 
 
@@ -845,7 +824,7 @@ isIndividualPillCountReached (i, gd) g
       then g & makeGhostLeave i
       else g
   where
-      threashold = ghostHouseDotLimitFor (gd ^. name) g
+      threashold = ghostHouseDotLimitFor (gd ^. ghostName) g
       breached = gd ^. ghostPillCount >= threashold
 
 
@@ -881,6 +860,7 @@ moveGhost g gd
   | gmode == GhostsHold || gstate == GhostHouse = gd
   | _t > 0 = gd & ghostTick .~ _t
   | gstate == GhostLeavingHouse = gd & moveGhostOutOfHouse g
+  | gstate == GhostEnteringHouse = gd & moveGhostIntoHouse g
   | isDecisionTime = newTickGd & makeDecision g gmode isYellowDecision
   | otherwise = newTickGd & moveGhostNoDecision g
   where
@@ -897,20 +877,36 @@ moveGhost g gd
 -- | Get the ghost out of the house using the normal rate for the level and
 -- move the ghost to the exit above the house.  It's a "to centre of house and
 -- then up" movement that should just happen.
--- Once the ghost hits the exit, it then switches to Normal and will proceed
--- as normal.
+-- Once the ghost hits the exit, it then switches to Normal.
 moveGhostOutOfHouse :: Game -> GhostData -> GhostData
-moveGhostOutOfHouse g gd = if newHw == ghostHouseExitCoord
-                             then newGd & ghostState .~ GhostNormal
-                             else newGd
+moveGhostOutOfHouse g gd
+  | newHw == ghostHouseExitCoord = newGd & ghostState .~ GhostNormal
+  | otherwise = newGd
   where
       (V2 h w) = gd ^. ghostAt
       (V2 th tw) = ghostHouseExitCoord
-      newHw = if w /= tw
-                then if w > tw then V2 h (w-1) else V2 h (w+1)
-                else V2 (h-1) w
+      newHw | w /= tw = if w > tw then V2 h (w-1) else V2 h (w+1)
+            | otherwise = V2 (h-1) w
       newGd = gd & ghostAt .~ newHw
                  & ghostTick .~ ghostNorm (ratesForLevel (g ^. gameLevel))
+
+
+-- | moveGhostIntoHouse
+-- Get the ghost back into its position in the ghost house after
+-- navigating to the maze to the ghostHouseExitCoord
+moveGhostIntoHouse :: Game -> GhostData -> GhostData
+moveGhostIntoHouse g gd
+  | newHw == ghostInSlotCoord = newGd & ghostState .~ GhostHouse
+  | otherwise = newGd
+  where
+      (V2 h w) = gd ^. ghostAt
+      ghostInSlotCoord = hwForGhostInHouse $ gd ^. ghostName
+      (V2 th tw) = ghostInSlotCoord
+      newHw | h == th = if w > tw then V2 h (w-1) else V2 h (w+1)
+            | otherwise = V2 (h+1) w
+      newGd = gd & ghostAt .~ newHw
+                 & ghostTick .~ ghostNorm (ratesForLevel (g ^. gameLevel))
+
 
 -- yellowDecision is greenDecision but not heading north!
 -- | make a decision by picking a direction based on the ghoststate
@@ -919,13 +915,22 @@ makeDecision :: Game
              -> Bool  -- if True, it's a yellow tile
              -> GhostData -> GhostData
 makeDecision g gmode isYellow gd
-  = if fleeing
-      then gd & makeFleeingDecision g possibleDirections
-      else gd & makeNonFleeingDecision g possibleDirections gmode
- where
+  | goingHome = gd & goingHomeDecision g
+  | fleeing   = gd & makeFleeingDecision g possibleDirections
+  | otherwise = gd & makeNonFleeingDecision g possibleDirections gmode
+  where
+    goingHome = gd ^. ghostState == GhostGoingHome
     fleeing = ghostsAreFleeing g
     f = if isYellow then filterOutNorth else id
     possibleDirections = f $ possibleDecisionsAt g gd
+
+
+goingHomeDecision :: Game -> GhostData -> GhostData
+goingHomeDecision g gd = gd & ghostAt .~ hw
+                            & ghostDir .~ dir
+  where
+    (dir, hw) = selectShortest ghostHouseExitCoord
+                               (possibleDecisionsAt g gd)
 
 
 makeFleeingDecision :: Game
@@ -955,18 +960,20 @@ makeNonFleeingDecision g possibles gmode gd
 
 chooseGhostTick :: Game -> GhostData -> Int
 chooseGhostTick g gd
+  | goingHome = goingHomeRateFrames
   | inTunnel  = ghostTunnel rates
   | fleeing   = ghostFright rates
   | isShadow  = frames
   | otherwise = ghostNorm rates
   where
-      level    = g ^. gameLevel
-      fleeing  = ghostsAreFleeing g
-      rates    = ratesForLevel level
-      isShadow = gd ^. name == Shadow
-      (V2 h w) = gd ^. ghostAt
-      inTunnel = h == 11 && ((w <= 5) || (w >= 21))
-      ps = g ^. pillsLeft
+      level     = g ^. gameLevel
+      fleeing   = ghostsAreFleeing g
+      goingHome = gd ^. ghostState == GhostGoingHome
+      rates     = ratesForLevel level
+      isShadow  = gd ^. ghostName == Shadow
+      (V2 h w)  = gd ^. ghostAt
+      inTunnel  = h == 11 && ((w <= 5) || (w >= 21))
+      ps        = g ^. pillsLeft
       (p1, f1, p2, f2) = elroyFramesForLevel level
       frames = case (ps <= p2, ps <= p1) of
           (True, _) -> f2
@@ -1033,7 +1040,7 @@ yellowDecisionTiles = map (uncurry V2) [
 -- | The target tiles are outside of the map, which causes the ghosts
 -- | to flee to the corners
 targetTileScatter :: Game -> GhostData -> Coord
-targetTileScatter g gd = case gd ^. name of
+targetTileScatter g gd = case gd ^. ghostName of
     Speedy  -> V2 (-2) 2   -- Pink ghost (2 above 2 in from lhs)
     Shadow  ->
         if fastShadow
@@ -1048,14 +1055,16 @@ targetTileScatter g gd = case gd ^. name of
 
 
 targetTileChase :: Game -> GhostData -> Coord
-targetTileChase g gd = case gd ^. name of
+targetTileChase g gd = case gd ^. ghostName of
     -- Pink Ghost = 4 frames in front of pacman
     Speedy  -> pacmanHw + 4 * pacmanDeltaHw
     -- Red ghost follows pacman
     Shadow  -> pacmanHw
     -- Cyan ghost does 2 * vector of red -> (pac + 2 in front)
     Bashful -> let twoTiles = pacmanHw + 2 * pacmanDeltaHw
-                   shadowGd = head $ filter ((==Shadow).(^.name)) $ g ^. ghosts
+                   shadowGd = head
+                              $ filter ((==Shadow).(^.ghostName))
+                              $ g ^. ghosts
                    shadowHw = shadowGd ^. ghostAt
                 in 2 * twoTiles - shadowHw
     -- Orange ghost
@@ -1075,6 +1084,7 @@ targetTileChase g gd = case gd ^. name of
 -- | direction.
 moveGhostNoDecision :: Game -> GhostData -> GhostData
 moveGhostNoDecision g gd
+  | atExit        = gd & ghostState .~ GhostEnteringHouse
   | notWillBeWall = gd & ghostAt .~ forwardHw
   | otherwise     = if leftWillBeWall
         then gd & ghostAt .~ rightOfHw
@@ -1082,6 +1092,8 @@ moveGhostNoDecision g gd
         else gd & ghostAt .~ leftOfHw
                 & ghostDir .~ goLeft
     where
+        atExit = (gd ^. ghostState == GhostGoingHome)
+                 && (gd ^. ghostAt == ghostHouseExitCoord)
         dir = gd ^. ghostDir
         hw  = gd ^. ghostAt
         forwardHw = wrapAroundBoard g (hw + deltaForDir dir)

@@ -16,11 +16,12 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 # TODO -- things we still need to work out
 
 * DONE - Getting the ghost out of the ghost house - animation, states
-* Getting the ghost back to the ghost house
+* DONE - Getting the ghost back to the ghost house
 * DONE - Losing a life
 * DONE - Starting a game (press 's' to start)
 * DONE - Game over
 * DONE - Pause the game key
+* Finishing a level (i.e. dots are up, and moving to the next level)
 * Animation whilst waiting to start the game.
 * Resolving the `display` 'reader' in the UI section
 * Sorting out the random number generator in IO monad and passing it to the main display
@@ -33,14 +34,13 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * DONE - Just track to the centre, and then go up to the exit spot; then move as per the `GhostNormal` ghosts (i.e they are out and about).
 * DONE - Ghost's can't leave the house whilst fleeing.
 
-## Getting the ghost back into the house (as a pair of ")
+## DONE - Getting the ghost back into the house (as a pair of ")
 
-* Remove state `GhostDead` - as ghosts don't 'die', they just return to the ghost house.
-* Add state `GhostGoingHome` -- the ghost traces a path (quickly) from their dying location back into the house to their start position.  Blinky (Shadow) needs to slot into the house to a location and then will immediately come back out.
-* The speed ought to be fast (say double normal speed, or just a fixed fast rate - easier).
-* We can flash the " character to show him returning home.  Ought to be light grey too.
-* The decisions will all be automated.  The first will be shortest to get the 'eyes' going, and thereafter, every decision point will be from a lookup table, which we just have to work out beforehand.
-* Normal rules for getting the ghost out then apply (dot counts, etc.)
+* DONE - Remove state `GhostDead` - as ghosts don't 'die', they just return to the ghost house.
+* DONE - Add state `GhostGoingHome` -- the ghost traces a path (quickly) from their dying location back into the house to their start position.  Blinky (Shadow) needs to slot into the house to a location and then will immediately come back out.
+* DONE - The speed ought to be fast (say double normal speed, or just a fixed fast rate - easier).
+* DONE - We can flash the " character to show him returning home.  Ought to be light grey too.
+* DONE - Normal rules for getting the ghost out then apply (dot counts, etc.)
 
 ## DONE - Losing a life
 
