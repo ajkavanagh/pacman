@@ -15,24 +15,23 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 
 # TODO -- things we still need to work out
 
-* MOSTLY DONE - Getting the ghost out of the ghost house - animation, states
-* Change how ghosts eaten are counted whilst fleeing; we can't use the dead state as they may leave the house; we have to count them each time into the GhostsFleeing state.
+* DONE - Getting the ghost out of the ghost house - animation, states
 * Getting the ghost back to the ghost house
-* Losing a life
+* DONE - Losing a life
 * Starting a game (press 's' to start)
 * Game over
 * Pause the game key
 * Animation whilst waiting to start the game.
 * Resolving the `display` 'reader' in the UI section
 
-## Getting a ghost out of the house (animation)
+## DONE - Getting a ghost out of the house (animation)
 
 * DONE - New state `GhostLeavingHouse` -- the ghost traces a path from their location to immediately above the ghost house at a pre-determined rate.
 * DONE - We ensure the ghosts are in the house in the leaving order (213) where 1 = Pinky, 2 = Inky, 3 = clyde
 * We don't animate the ghosts back and forwards in the house (yet).
 * DONE - Use the `ghostNorm ratesForLevel g ^. gameLevel` ticks for each move
 * DONE - Just track to the centre, and then go up to the exit spot; then move as per the `GhostNormal` ghosts (i.e they are out and about).
-* Ghost's can't leave the house whilst fleeing - or we need to change how the bonus scoring works -- TODO: change how bonus scoring works for fleeing (we need to count the ghosts that have been eaten whilst fleeing).
+* DONE - Ghost's can't leave the house whilst fleeing.
 
 ## Getting the ghost back into the house (as a pair of ")
 

@@ -363,17 +363,22 @@ pillTimerExpired g = g ^. framesSincePill > frames
 -- mode.
 incPillTimerAction :: Game -> DrawList Game
 incPillTimerAction g
-  | gmode == GhostsHold = return g
-  | otherwise           = return $ g & framesSincePill %~ succ
+  | gmode == GhostsHold || fleeing = return g
+  | otherwise                      = return $ g & framesSincePill %~ succ
   where
       (_, gmode) = g ^. ghostsMode
+      fleeing = ghostsAreFleeing g
 
 clearPillTimer :: Game -> Game
 clearPillTimer = framesSincePill .~ 0
 
 
 incGlobalPillCount :: Game -> Game
-incGlobalPillCount = globalPillCount %~ fmap succ
+incGlobalPillCount g
+  | fleeing = g
+  | otherwise = g & globalPillCount %~ fmap succ
+  where
+      fleeing = ghostsAreFleeing g
 
 
 initialHoldSeconds = 3
@@ -753,11 +758,12 @@ nextGhostsMode g = case g ^. ghostsModes of
 -- been eaten).
 maybeAddGhostPillCount :: Game -> Game
 maybeAddGhostPillCount g
-  | isJust gcounter = g
+  | isJust gcounter || fleeing = g
   | otherwise = case i of
       Just i' -> g & ghosts . ix i' . ghostPillCount %~ succ
       Nothing -> g
   where
+      fleeing = ghostsAreFleeing g
       gcounter = g ^. globalPillCount
       gds = ghostsInTheHouse g
       i  = if null gds then Nothing else Just $ (fst . head) gds
@@ -792,9 +798,11 @@ makeGhostLeave :: Int -> Game -> Game
 makeGhostLeave i = ghosts . ix i . ghostState .~ GhostLeavingHouse
 
 
+-- | seeIfGhostShouldLeaveHouseAction - checks to see if the ghosts
+-- should leave the house; if we are fleeing then no ghost leaves the house
 seeIfGhostShouldLeaveHouseAction :: Game -> DrawList Game
 seeIfGhostShouldLeaveHouseAction g
-  | null gds = return g
+  | fleeing || null gds = return g
   | otherwise = return $ if pillTimerExpired g
                            then g & makeGhostLeave ((fst.head) gds)
                                   & clearPillTimer
@@ -803,6 +811,7 @@ seeIfGhostShouldLeaveHouseAction g
                                Nothing  -> isIndividualPillCountReached (head gds) g
   where
       gds = ghostsInTheHouse g
+      fleeing = ghostsAreFleeing g
 
 
 isIndividualPillCountReached :: (Int, GhostData) -> Game -> Game
