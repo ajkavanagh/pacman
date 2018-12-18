@@ -453,7 +453,6 @@ pause :: Game -> Game
 pause g
   | notStarted = g
   | otherwise  = g & paused %~ not
-        
   where
     notStarted = g ^. gameState == NotStarted
 
@@ -616,6 +615,7 @@ eatPillOrPowerUpAction g
         & maze  %~ (`mazeClearAt` hw)
         & (pacman . pacTick) .~ choosePacTick g EatenPill
         & maybeAddGhostPillCount
+        & incGlobalPillCount
         & clearPillTimer
   | c == powerupChar = do
       redrawGhostsAction g
@@ -791,7 +791,7 @@ isGlobalPillCountReachedForGhost (i, gd) g = fromMaybe g maybeLeaving
 makeGhostLeave :: Int -> Game -> Game
 makeGhostLeave i = ghosts . ix i . ghostState .~ GhostLeavingHouse
 
--- TODO check for globalTimer
+
 seeIfGhostShouldLeaveHouseAction :: Game -> DrawList Game
 seeIfGhostShouldLeaveHouseAction g
   | null gds = return g
