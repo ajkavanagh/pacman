@@ -32,7 +32,7 @@ data Game = Game
   , _mazeHeight      :: Int
   , _mazeWidth       :: Int
   , _gameover        :: Bool
-  , _state           :: GameState
+  , _gameState       :: GameState
   , _pillsLeft       :: Int
   , _paused          :: Bool
   , _score           :: Int
@@ -402,7 +402,7 @@ initGame seed
                        , _mazeHeight = h
                        , _mazeWidth = w
                        , _gameover = False
-                       , _state = NotStarted
+                       , _gameState = NotStarted
                        , _pillsLeft = numPills
                        , _paused = False
                        , _score = 0
@@ -438,6 +438,12 @@ initialPacman = PacmanData (V2 17 13) Still Still False 1       0
 -- this is to allow the action to return a drawlist as well as the modified
 -- Game.
 
+-- | startAction - get the game going
+startAction :: Game -> Game -> DrawList Game
+startAction g _ = do
+    let g' = g & gameState .~ Playing
+    addDrawListItem DrawEverything
+    return g'
 
 -- | pauseAction -- pause and un-pause the game
 pauseAction :: Game -> DrawList Game
@@ -445,7 +451,12 @@ pauseAction = return . pause
 
 -- | pause and un-pause the game
 pause :: Game -> Game
-pause = paused %~ not
+pause g
+  | notStarted = g
+  | otherwise  = g & paused %~ not
+        
+  where
+    notStarted = g ^. gameState == NotStarted
 
 -- | debug helper to simulate dying on demand
 debugDieAction :: Game -> DrawList Game
@@ -457,7 +468,9 @@ turnAction d = return . turn d
 
 -- change the direction using a lens
 turn :: Direction -> Game -> Game
-turn d g = if (dir /= Still) && checkForWall g hw'
+turn d g
+  | notStarted = g
+  | otherwise = if (dir /= Still) && checkForWall g hw'
              then g & (pacman . pacNextDir) .~ d
              else g & (pacman . pacDir) .~ d
                     & (pacman . pacNextDir) .~ Still
@@ -465,13 +478,14 @@ turn d g = if (dir /= Still) && checkForWall g hw'
         dir = g ^. (pacman . pacDir)
         hw  = g ^. (pacman . pacAt)
         hw' = wrapAroundBoard g (hw + deltaHw)
+        notStarted = g ^. gameState == NotStarted
 
 
 -- | tickAction -- everything we have to do when it ticks.  Everything called
 -- <something>Action returns a Writer Monad.
 tickAction :: Game -> DrawList Game
 tickAction g =
-    if g ^. paused
+    if g ^. paused || g ^. gameState == NotStarted
       then return g
       else (   incPillTimerAction
            >=> maybeDoPacmanAction
@@ -667,6 +681,9 @@ killGhost p gd
   | otherwise       = gd
 
 
+-- | TODO Eaten by a ghost -- essentially, we have died.  We need to allow time for
+-- the animation (a timer) and then proceed to losing the life, reseting the
+-- ghosts and carrying on.
 eatenByGhost :: Game -> Game
 eatenByGhost g = g & gameover .~ True
                    & (pacman . dying) .~ True

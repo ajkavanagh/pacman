@@ -141,6 +141,8 @@ mapEvent (EventSpecialKey KeyRightArrow) = Just $ turnAction East
 mapEvent (EventSpecialKey KeyDownArrow)  = Just $ turnAction South
 mapEvent (EventSpecialKey KeyLeftArrow)  = Just $ turnAction West
 mapEvent ev | isEventChars "dD" ev       = Just   debugDieAction
+-- TODO: need to access the random number generator here!
+mapEvent ev | isEventChars "sS" ev       = Just $ startAction (initGame 1)
 mapEvent _ = Nothing
 
 --
@@ -345,7 +347,7 @@ debugGameLines g =
         , "paused:    " ++ show (g ^. paused)
         , show (g ^. ghostsMode)
         , "gameover:  " ++ show (g ^. gameover)
-        , "state:     " ++ show (g ^. state)
+        , "state:     " ++ show (g ^. gameState)
         , "score:     " ++ show (g ^. score)
         , "pill f:    " ++ show (g ^. framesSincePill)
         , "g pill #   " ++ show (g ^. globalPillCount)
