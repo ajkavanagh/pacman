@@ -47,7 +47,7 @@ data PacmanData = PacmanData
   { _pacAt        :: Coord
   , _pacDir       :: Direction
   , _pacNextDir   :: Direction
-  , _pacDying     :: Bool
+  , _pacDead      :: Bool
   , _pacTick      :: Int
   , _pacAnimate   :: Int
   } deriving (Eq, Show)
@@ -560,12 +560,12 @@ step =
 maybeDoPacmanAction :: Game -> DrawList Game
 maybeDoPacmanAction g
   | not onTick = return g'
-  | isDying    = whilstDyingAction g'
-  | otherwise = (movePacmanAction >=> eatPillOrPowerUpAction) g'
+  | isDead     = whilstDyingAction g'
+  | otherwise  = (movePacmanAction >=> eatPillOrPowerUpAction) g'
   where
     g' = g & (pacman . pacTick) %~ (\t -> max 0 $ t - 1)
     onTick = (g' ^. (pacman . pacTick)) == 0
-    isDying = g' ^. pacman . pacDying
+    isDead = g' ^. pacman . pacDead
 
 
 -- | whilstDyingAction -- keep the display updated for each animate tick
@@ -746,7 +746,7 @@ killGhost p gd
 -- the animation (a timer) and then proceed to losing the life, reseting the
 -- ghosts and carrying on.  This is handled in the whilstDyingAction function
 eatenByGhost :: Game -> Game
-eatenByGhost g = g & (pacman . pacDying) .~ True
+eatenByGhost g = g & (pacman . pacDead) .~ True
                    & (pacman . pacAnimate) .~ 0
 
 

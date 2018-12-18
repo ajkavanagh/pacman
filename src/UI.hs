@@ -379,7 +379,7 @@ debugPacmanLines g =
         [ "pacAt:      " ++ show (p ^. pacAt)
         , "pacDir:     " ++ show (p ^. pacDir)
         , "pacNextDir: " ++ show (p ^. pacNextDir)
-        , "dying:      " ++ show (p ^. pacDying)
+        , "dead:       " ++ show (p ^. pacDead)
         , "pacAnimate: " ++ show (p ^. pacAnimate)
         , "pacTick:    " ++ show (p ^. pacTick)
         ]
@@ -480,7 +480,7 @@ strForPacman :: PacmanData -> String
 strForPacman p = st
   where
     (V2 h w) = p ^. pacAt
-    st = if p ^. pacDying
+    st = if p ^. pacDead
       then if _t >= length pacmanDiesChars
              then " "
              else [pacmanDiesChars !! _t]
