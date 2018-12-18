@@ -32,12 +32,13 @@ import Pacman
 
 import BChan (BChan, newBChan, writeBChan, readBChan)
 import Linear.V2 (V2(..))
-import Lens.Micro ((^.))
+import Lens.Micro ((^.), ix)
 
 
 showDebug = True
 showPacmanDebug = False
 showGameDebug = True
+showGhostDebug = True
 
 -- Types
 
@@ -96,7 +97,7 @@ ncursesMain chan initG = runCurses $ do
     sw <- newWindow 5 20 0 0
     setKeypad sw True
     gw <- newWindow (fromIntegral (mh+2)) (fromIntegral (mw+2)) 0 30
-    pwdebug <- newWindow 6 30 10 0
+    pwdebug <- newWindow 15 30 10 0
     updateWindow pwdebug clear
     let display =
             Display { windows = M.fromList
@@ -139,6 +140,7 @@ mapEvent (EventSpecialKey KeyUpArrow)    = Just $ turnAction North
 mapEvent (EventSpecialKey KeyRightArrow) = Just $ turnAction East
 mapEvent (EventSpecialKey KeyDownArrow)  = Just $ turnAction South
 mapEvent (EventSpecialKey KeyLeftArrow)  = Just $ turnAction West
+mapEvent ev | isEventChars "dD" ev       = Just   debugDieAction
 mapEvent _ = Nothing
 
 --
@@ -317,6 +319,7 @@ determineDebugLines :: Game -> [String]
 determineDebugLines g
   =  debugPacmanLines g
   ++ debugGameLines g
+  ++ debugGhostLines g
 
 
 debugPacmanLines :: Game -> [String]
@@ -344,9 +347,24 @@ debugGameLines g =
         , "gameover:  " ++ show (g ^. gameover)
         , "state:     " ++ show (g ^. state)
         , "score:     " ++ show (g ^. score)
+        , "pill f:    " ++ show (g ^. framesSincePill)
+        , "g pill #   " ++ show (g ^. globalPillCount)
         ]
       else []
 
+debugGhostLines :: Game -> [String]
+debugGhostLines g =
+    if showGhostDebug
+      then
+        [ "ghost:     " ++ show (gd ^. name)
+        , "state:     " ++ show (gd ^. ghostState)
+        , "tick:      " ++ show (gd ^. ghostTick)
+        , "pill #     " ++ show (gd ^. ghostPillCount)
+        ]
+      else []
+  where
+      -- change this to 0 -- 3
+      gd = (g ^. ghosts) !! 1
 
 {-
 drawDebugGhost :: Game -> GhostPersonality -> Widget Name
