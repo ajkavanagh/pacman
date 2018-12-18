@@ -59,6 +59,7 @@ data Cell = PacmanW PacmanData
 data AppWindow = ScoreWindow
                | GridWindow
                | DebugWindow
+               | InfoWindow
                deriving (Eq, Ord, Show)
 
 -- The WindowMap stores a lookup of AppWindow to actual ncurses window
@@ -93,10 +94,13 @@ ncursesMain chan initG = runCurses $ do
     lastCursorMode <- setCursorMode CursorInvisible
     setEcho False
     let (mh, mw) = mazeHW (initG ^. maze)
+        h = fromIntegral (mh+2)
+        w = fromIntegral (mw+2)
     theAttrs <- makeAttrs
     sw <- newWindow 5 20 0 0
     setKeypad sw True
-    gw <- newWindow (fromIntegral (mh+2)) (fromIntegral (mw+2)) 0 30
+    gw <- newWindow h w 0 30
+    iw <- newWindow 3 w (h+1) 30
     pwdebug <- newWindow 15 30 10 0
     updateWindow pwdebug clear
     let display =
@@ -104,6 +108,7 @@ ncursesMain chan initG = runCurses $ do
                                     [ (ScoreWindow, sw)
                                     , (GridWindow,  gw)
                                     , (DebugWindow, pwdebug)
+                                    , (InfoWindow, iw)
                                     ]
                     , attrs   = theAttrs }
     drawEverything initG display
@@ -243,15 +248,18 @@ drawEverything :: Game -> Display -> Curses ()
 drawEverything g display = do
     let gw = windowFor GridWindow display
         sw = windowFor ScoreWindow display
+        iw = windowFor InfoWindow display
         as = attrs display
     updateWindow gw clear
     updateWindow sw clear
+    updateWindow iw clear
     drawBorderHelper sw
     drawBorderHelper gw
     renderScoreOnWindow sw (g ^. score) as
     renderLivesOnWindow sw (g ^. livesLeft) as
     renderLevelOnWindow sw (g ^. gameLevel) as
     renderAllGameOnWindow gw g as
+    renderInfoWindow iw g as
 
 
 renderScoreOnWindow :: Window -> Int -> Attrs -> Curses ()
@@ -281,6 +289,41 @@ commonRenderStats w s l a as =
         setAttrUsing a as
         drawString s
         moveCursor 0 0
+
+
+-- | render the info window depending on what has happened
+renderInfoWindow :: Window  -- window to draw on
+                 -> Game    -- data to draw from
+                 -> Attrs   -- all atributes
+                 -> Curses ()
+renderInfoWindow w g as
+  | showStart = do
+      updateWindow w $ do
+        clear
+        moveCursor 1 3
+        setAttrUsing InfoAttr as
+        drawString "Press 's' to start :)"
+      drawBorderHelper w
+  | showGameOver = do
+      updateWindow w $ do
+        clear
+        moveCursor 1 5
+        setAttrUsing GameOverAttr as
+        drawString "!!! Game Over !!!"
+      drawBorderHelper w
+  | g ^. paused = do
+      updateWindow w $ do
+        clear
+        moveCursor 1 8
+        setAttrUsing InfoAttr as
+        drawString "Paused."
+      drawBorderHelper w
+  | otherwise = updateWindow w clear
+  where
+      showStart = g ^. gameState == NotStarted
+      showGameOver = case g ^. gameState of
+          GameOver _ -> True
+          _          -> False
 
 
 renderAllGameOnWindow :: Window -> Game -> Attrs -> Curses ()
@@ -476,6 +519,8 @@ data Attr
   | ScoreAttr
   | LivesAttr
   | LevelAttr
+  | InfoAttr
+  | GameOverAttr
   deriving (Show, Eq, Enum)
 
 type Attrs = Vector (ColorID, [Attribute])
@@ -514,6 +559,8 @@ makeAttrs = do
         scoreAttr = (whiteID, [AttributeBold])
         livesAttr = (whiteID, [])
         levelAttr = (whiteID, [])
+        infoAttr  = (yellowID, [AttributeBlink, AttributeBold])
+        gameOverAttr = (redID, [AttributeBlink, AttributeBold])
     return $ fromList [ emptyAttr
                       , pillAttr
                       , powerupAttr
@@ -527,4 +574,6 @@ makeAttrs = do
                       , scoreAttr
                       , livesAttr
                       , levelAttr
+                      , infoAttr
+                      , gameOverAttr
                       ]

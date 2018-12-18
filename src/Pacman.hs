@@ -107,7 +107,7 @@ data Direction
 data GameState
   = NotStarted
   | Playing
-  | GameOver
+  | GameOver Int    -- includes frame timer to timeout game over
   deriving (Eq, Show)
 
 data EatSomething
@@ -386,6 +386,9 @@ initialHoldFrames = round framesPerSecond * initialHoldSeconds
 ghostDeadAt = V2 11 12 -- TODO: delete this for GhostGoingHome state
 ghostHouseExitCoord = V2 9 13
 
+gameOverSeconds = 10
+gameOverFrames = round framesPerSecond * gameOverSeconds
+
 dyingComplete = length pacmanDiesChars * 2
 
 -- | The initial game
@@ -449,25 +452,34 @@ startAction g _ = do
     addDrawListItem DrawEverything
     return g'
 
+
 -- | pauseAction -- pause and un-pause the game
 pauseAction :: Game -> DrawList Game
-pauseAction = return . pause
+pauseAction g = do
+    let g' = pause g
+    addDrawListItem DrawEverything
+    return g'
+
 
 -- | pause and un-pause the game
+-- We can only pause/un-pause during a game
 pause :: Game -> Game
 pause g
-  | notStarted = g
-  | otherwise  = g & paused %~ not
+  | playing  = g & paused %~ not
+  | otherwise = g
   where
-    notStarted = g ^. gameState == NotStarted
+    playing = g ^. gameState == Playing
+
 
 -- | debug helper to simulate dying on demand
 debugDieAction :: Game -> DrawList Game
 debugDieAction = return . eatenByGhost
 
+
 -- | turnAction -- set up a turn for the user
 turnAction :: Direction -> Game -> DrawList Game
 turnAction d = return . turn d
+
 
 -- change the direction using a lens
 turn :: Direction -> Game -> Game
@@ -487,15 +499,28 @@ turn d g
 -- | tickAction -- everything we have to do when it ticks.  Everything called
 -- <something>Action returns a Writer Monad.
 tickAction :: Game -> DrawList Game
-tickAction g =
-    if g ^. paused || g ^. gameState == NotStarted
-      then return g
-      else (   incPillTimerAction
-           >=> maybeDoPacmanAction
-           >=> maybeUpdateGhostsModeAction
-           >=> seeIfGhostShouldLeaveHouseAction
-           >=> moveGhostsAction
-           ) g
+tickAction g
+  | notRunning = return g
+  | gameOver = do
+      let (GameOver _t) = gstate
+          _t' = max 0 (_t - 1)
+      if _t' /= 0
+        then return $ g & gameState .~ GameOver _t'
+        else do
+            addDrawListItem DrawEverything
+            return $ g & gameState .~ NotStarted
+  | otherwise = (   incPillTimerAction
+                >=> maybeDoPacmanAction
+                >=> maybeUpdateGhostsModeAction
+                >=> seeIfGhostShouldLeaveHouseAction
+                >=> moveGhostsAction
+                ) g
+  where
+      gstate = g ^. gameState
+      notRunning = g ^. paused || gstate == NotStarted
+      gameOver = case gstate of
+          GameOver _ -> True
+          _          -> False
 
 
 -- Just step the game forward one tick
@@ -556,7 +581,7 @@ whilstDyingAction g
   -- Game over -- the game is done, so just leave it animating the ghosts
   | remainingLives == 0 = do
       addDrawListItem DrawEverything
-      return $ g & gameState .~ GameOver
+      return $ g & gameState .~ GameOver gameOverFrames
   -- we've lost a life, so reset pacman, the ghosts, and enable the global
   -- pill count to get ghosts out of the house
   | otherwise = do
