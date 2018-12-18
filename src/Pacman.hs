@@ -360,8 +360,14 @@ pillTimerExpired g = g ^. framesSincePill > frames
       timeout = if g ^. gameLevel < 5 then 4 else 3
       frames = round framesPerSecond * timeout
 
+-- | increment the frames since last pill timer, but not in the GhostsHold ghost
+-- mode.
 incPillTimerAction :: Game -> DrawList Game
-incPillTimerAction g = return $ g & framesSincePill %~ succ
+incPillTimerAction g
+  | gmode == GhostsHold = return g
+  | otherwise           = return $ g & framesSincePill %~ succ
+  where
+      (_, gmode) = g ^. ghostsMode
 
 clearPillTimer :: Game -> Game
 clearPillTimer = framesSincePill .~ 0
