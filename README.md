@@ -22,6 +22,8 @@ For other terminal applications, I would **definitely** use Brick/Vty as it is
 a much better option with scrolling windows, handling events, etc.  A really
 nice library, just not the sweet spot for this game.
 
+Best played on a terminal with no theme set, so that the original colours can
+be seen.
 
 Useful links:
 
