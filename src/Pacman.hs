@@ -521,9 +521,8 @@ tickAction g
             return $ g & gameState .~ NotStarted
   | otherwise = (   incPillTimerAction
                 >=> maybeDoPacmanAction
-                >=> eatGhostOrBeEatenAction
                 >=> maybeUpdateGhostsModeAction
-                >=> seeIfGhostShouldLeaveHouseAction
+                >=> seeIfPillTimerExpiredAction
                 >=> moveGhostsAction
                 ) g
   where
@@ -544,7 +543,10 @@ maybeDoPacmanAction :: Game -> DrawList Game
 maybeDoPacmanAction g
   | not onTick = return g'
   | isDead     = whilstDyingAction g'
-  | otherwise  = (movePacmanAction >=> eatPillOrPowerUpAction) g'
+  | otherwise  = (   movePacmanAction
+                 >=> eatPillOrPowerUpAction
+                 >=> eatGhostOrBeEatenAction
+                 ) g'
   where
     g' = g & (pacman . pacTick) %~ (\t -> max 0 $ t - 1)
     onTick = (g' ^. (pacman . pacTick)) == 0
@@ -630,6 +632,7 @@ eatPillOrPowerUpAction g
         & maybeAddGhostPillCount
         & incGlobalPillCount
         & clearPillTimer
+        & checkPillCountForGhostExitHouse
   | c == powerupChar = do
       redrawGhostsAction g
       addDrawListItem DrawScore
@@ -806,17 +809,35 @@ makeGhostLeave :: Int -> Game -> Game
 makeGhostLeave i = ghosts . ix i . ghostState .~ GhostLeavingHouse
 
 
--- | seeIfGhostShouldLeaveHouseAction - checks to see if the ghosts
--- should leave the house; if we are fleeing then no ghost leaves the house
-seeIfGhostShouldLeaveHouseAction :: Game -> DrawList Game
-seeIfGhostShouldLeaveHouseAction g
-  | fleeing || null gds = return g
-  | otherwise = return $ if pillTimerExpired g
-                           then g & makeGhostLeave ((fst.head) gds)
-                                  & clearPillTimer
-                           else case g ^. globalPillCount of
-                               Just _   -> isGlobalPillCountReachedForGhost (head gds) g
-                               Nothing  -> isIndividualPillCountReached (head gds) g
+-- | seeIfPillTimerExpiredAction
+-- This is checked every tick, so needs to exit quickly, hence the quick
+-- check on fleeing and then the timer being expired.  If neither is the case
+-- then check for no ghosts in the ghost, and finally make the ghost leave if
+-- it is true.
+seeIfPillTimerExpiredAction :: Game -> DrawList Game
+seeIfPillTimerExpiredAction g
+  | fleeing = return g
+  | pillTimerExpired g && not (null gds) = return
+      $ if not (null gds)
+          then g & makeGhostLeave ((fst.head) gds)
+                 & clearPillTimer
+          else g
+  | otherwise = return g
+  where
+      gds = ghostsInState [GhostHouse] g
+      fleeing = ghostsAreFleeing g
+
+
+-- | checkPillCountForGhostExitHouse
+-- After eating a pill, this function is called to see if any ghosts should
+-- leave the house.
+checkPillCountForGhostExitHouse :: Game -> Game
+checkPillCountForGhostExitHouse g
+  = if fleeing || null gds
+      then g
+      else case g ^. globalPillCount of
+          Just _   -> isGlobalPillCountReachedForGhost (head gds) g
+          Nothing  -> isIndividualPillCountReached (head gds) g
   where
       gds = ghostsInState [GhostHouse] g
       fleeing = ghostsAreFleeing g
