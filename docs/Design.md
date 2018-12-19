@@ -21,7 +21,7 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * DONE - Starting a game (press 's' to start)
 * DONE - Game over
 * DONE - Pause the game key
-* Finishing a level (i.e. dots are up, and moving to the next level)
+* DONE - Finishing a level (i.e. dots are up, and moving to the next level)
 * Animation whilst waiting to start the game.
 * Resolving the `display` 'reader' in the UI section
 * Sorting out the random number generator in IO monad and passing it to the main display
@@ -75,3 +75,9 @@ The pacman and ghosts move at "number of 1/60s ticks", where the relative ratio 
 * Pacman needs to move with a predetermined set of turns.
 * Specific seed given to `initGame` to make the ghosts do predetermined things.
 * How to get the moves/turns to Pacman?
+
+## Animation at the end of a level
+
+* Needs a short delay at the end of the level when pacman eats the last dot.
+* Probably make pacman disappear and allow the ghosts to keep animating
+* Then reset the maze and start eating dots.

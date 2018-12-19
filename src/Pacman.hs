@@ -22,6 +22,8 @@ import           Lens.Micro.TH       (makeLenses)
 import           Linear.V2           (V2 (..), _x, _y)
 import           System.Random       (Random (..), newStdGen, StdGen, mkStdGen, randomR)
 
+pacmanInvulnerable = False
+
 -- types
 data Game = Game
   { _pacman          :: PacmanData
@@ -546,6 +548,7 @@ maybeDoPacmanAction g
   | otherwise  = (   movePacmanAction
                  >=> eatPillOrPowerUpAction
                  >=> eatGhostOrBeEatenAction
+                 >=> checkForLevelEndAction
                  ) g'
   where
     g' = g & (pacman . pacTick) %~ (\t -> max 0 $ t - 1)
@@ -647,6 +650,27 @@ eatPillOrPowerUpAction g
         c = mazeCharAt g hw
 
 
+-- | checkForLevelEnd
+-- Check whether all the pills are eaten by checking the pillsLeft is 0
+-- If so, end the level, reset the ghosts, and start the next level with
+-- ghosts in the held state, and we move back to our start location
+checkForLevelEndAction :: Game -> DrawList Game
+checkForLevelEndAction g
+  | g ^. pillsLeft /= 0 = return g
+  | otherwise = do
+      addDrawListItem DrawEverything
+      return $ g
+        & pillsLeft .~ countPills maze0     -- set the pillLeft back to the full set.
+        & gameLevel %~ succ                 -- next level
+        & maze .~ initialMaze maze0         -- reset the dots
+        & pacman .~ resetPacman             -- tell pacman where to go
+        & ghosts .~ resetGhosts ghostsSeed  -- put ghosts back in the house
+        & framesSincePill .~ 0              -- reset global frames since pill
+        & globalPillCount ?~ 0              -- Set to Just 0, to activate global counter
+        & randStdGen .~ newStdGen
+  where
+      (ghostsSeed, newStdGen) = random $ g ^. randStdGen
+
 -- | redraw all the ghosts - probably due to a mode change.
 redrawGhostsAction :: Game -> DrawList ()
 redrawGhostsAction g =
@@ -689,8 +713,7 @@ eatGhostOrBeEaten g
   | otherwise = case (null ghs, fleeing) of
     (True, _)      -> g
     (False, True)  -> eatGhost (head ghs) g
-    --(False, False) -> eatenByGhost g
-    (False, False) -> g  -- disable being eaten for debugging purposes
+    (False, False) -> eatenByGhost g
   where
       xy = g ^. pacman . pacAt
       isAt = (==xy) . (^.ghostAt)
@@ -731,8 +754,10 @@ killGhost p gd
 -- the animation (a timer) and then proceed to losing the life, reseting the
 -- ghosts and carrying on.  This is handled in the whilstDyingAction function
 eatenByGhost :: Game -> Game
-eatenByGhost g = g & (pacman . pacDead) .~ True
-                   & (pacman . pacAnimate) .~ 0
+eatenByGhost g
+  | pacmanInvulnerable = g
+  | otherwise          = g & (pacman . pacDead) .~ True
+                           & (pacman . pacAnimate) .~ 0
 
 
 -- | see if we choose the next ghost mode
@@ -869,7 +894,9 @@ moveGhostsAction g = do
     forM_ diffHws $ \(x, y) -> do
         addDrawListItem $ DrawGridAt x
         addDrawListItem $ DrawGridAt y
-    return g'
+    if null diffHws
+      then eatGhostOrBeEatenAction g'
+      else return g'
 
 
 -- | move the ghost if the ghostTick is decremented to 0, otherwise just return

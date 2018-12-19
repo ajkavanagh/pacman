@@ -35,7 +35,7 @@ import Linear.V2 (V2(..))
 import Lens.Micro ((^.), ix)
 
 
-showDebug = True
+showDebug = False
 showPacmanDebug = False
 showGameDebug = True
 showGhostDebug = True
