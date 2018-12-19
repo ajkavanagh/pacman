@@ -666,7 +666,7 @@ checkForLevelEndAction g
         & pacman .~ resetPacman             -- tell pacman where to go
         & ghosts .~ resetGhosts ghostsSeed  -- put ghosts back in the house
         & framesSincePill .~ 0              -- reset global frames since pill
-        & globalPillCount ?~ 0              -- Set to Just 0, to activate global counter
+        & globalPillCount .~ Nothing        -- Set to Just 0, to activate global counter
         & randStdGen .~ newStdGen
   where
       (ghostsSeed, newStdGen) = random $ g ^. randStdGen
