@@ -681,16 +681,20 @@ eatGhostOrBeEatenAction = return . eatGhostOrBeEaten
 -- | eatGhostOrBeEaten
 -- We can only be eaten or eat a ghost if it's not GhostGoingHome
 eatGhostOrBeEaten :: Game -> Game
-eatGhostOrBeEaten g = case (null ghs, fleeing) of
+eatGhostOrBeEaten g
+  | isDead = g
+  | otherwise = case (null ghs, fleeing) of
     (True, _)      -> g
     (False, True)  -> eatGhost (head ghs) g
     --(False, False) -> eatenByGhost g
-    (False, False) -> eatGhost (head ghs) g  -- invulnerable!
+    (False, False) -> g  -- disable being eaten for debugging purposes
   where
       xy = g ^. pacman . pacAt
       isAt = (==xy) . (^.ghostAt)
       isNotEyes = (/=GhostGoingHome) . (^.ghostState)
-      canCollide = liftA2 (&&) isAt isNotEyes
+      isDead = g ^. pacman . pacDead
+      (<&&>) = liftA2 (&&)
+      canCollide = isAt <&&> isNotEyes
       ghs = filter canCollide $ g ^. ghosts
       fleeing = ghostsAreFleeing g
 
