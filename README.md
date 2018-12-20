@@ -25,6 +25,10 @@ nice library, just not the sweet spot for this game.
 Best played on a terminal with no theme set, so that the original colours can
 be seen.
 
+## Screen Shot
+
+![Pac-man Screenshot](docs/pac-man-screen-shot.png)
+
 Useful links:
 
 * Video of ASCII pacman: https://www.youtube.com/watch?v=wZorbnsFeHQ
