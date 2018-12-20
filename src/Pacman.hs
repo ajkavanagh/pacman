@@ -895,8 +895,8 @@ moveGhostsAction g = do
         addDrawListItem $ DrawGridAt x
         addDrawListItem $ DrawGridAt y
     if null diffHws
-      then eatGhostOrBeEatenAction g'
-      else return g'
+      then return g'
+      else eatGhostOrBeEatenAction g'
 
 
 -- | move the ghost if the ghostTick is decremented to 0, otherwise just return
