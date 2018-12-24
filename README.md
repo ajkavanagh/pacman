@@ -34,6 +34,14 @@ To build it:
 * [Download and install Slack](https://docs.haskellstack.org/en/stable/README/#how-to-install)
 * Run `stack run` in the root of the distribution.
 
+## TODOs
+
+* Use an IO Random seeded random number generator.  I've just not got around to
+  it yet!  At the moment, every game is the same, for ghosts when they flee.
+* Implement Fruit bonuses.
+* Implement (probably a `StateT` monad) to 'pass' the display structure around
+  the `UI.hs` module.
+
 ## Minor Implementation Details
 
 This is a relatively full implementation of the game.  The only thing missing

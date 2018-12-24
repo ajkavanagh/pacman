@@ -155,16 +155,6 @@ mapEvent ev | isEventChars "sS" ev       = Just $ startAction (initGame 1)
 mapEvent ev | isEventChars "pP" ev       = Just   pauseAction
 mapEvent _ = Nothing
 
---
--- Handling events
-{-
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'r') [])) = liftIO initGameIO >>= continue
-handleEvent g (VtyEvent (V.EvKey (V.KChar 'p') [])) = continue $ pause g
-handleEvent g (VtyEvent (V.EvKey V.KEsc []))        = halt g
-handleEvent g _                                     = continue g
--}
-
-
 
 -- | handle the tick -- i.e. update the game state and maybe do a redraw
 handleTick :: Game -> Display -> Curses Game
@@ -415,35 +405,6 @@ debugGhostLines g =
       -- change this to 0 -- 3
       gd = (g ^. ghosts) !! 1
 
-{-
-drawDebugGhost :: Game -> GhostPersonality -> Widget Name
-drawDebugGhost g gp = withBorderStyle BS.unicodeBold
-  $ B.borderWithLabel (str ("Ghost " ++ show gp))
-  $ vBox [ hBox [str "ghostAt:    ", str $ show (gd ^. ghostAt)]
-         , hBox [str "ghostDir:   ", str $ show (gd ^. ghostDir)]
-         , hBox [str "ghostState: ", str $ show (gd ^. ghostState)]
-         ]
-  where gd = head $ filter ((==gp).(^. name)) $ g ^. ghosts
-
-drawGameOverOrPaused :: Game -> Widget Name
-drawGameOverOrPaused g = if not (g ^. paused)
-                           then drawGameOver (g ^. gameover)
-                           else drawPaused
--}
-
-{-
-drawGameOver :: Bool -> Widget Name
-drawGameOver True  = withAttr gameOverAttr $ C.hCenter $ str "GAME OVER"
-drawGameOver False = emptyWidget
-
-gameOverAttr :: AttrName
-gameOverAttr = "gameOver"
--}
-
-{-
-drawPaused :: Widget Name
-drawPaused = withAttr gameOverAttr $ C.hCenter $ str "Paused"
--}
 
 -- we return a Cell which represents what we want to draw, which might well just
 -- be the character in the maze

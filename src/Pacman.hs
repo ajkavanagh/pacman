@@ -3,7 +3,6 @@
 
 module Pacman where
 
-import           Control.Arrow       ((>>>))
 import           Control.Applicative ((<|>), liftA2)
 import           Control.Monad       (guard, when, unless, (>=>), forM_)
 import           Control.Monad.Trans.Writer.Strict (Writer, tell)
@@ -535,10 +534,6 @@ tickAction g
           _          -> False
 
 
--- Just step the game forward one tick
--- TODO: is game over (i.e. eaten all pills)
-
-
 -- | Decrement the tick and move the pacman if it has reached zero.  Also
 -- check for the pill or powerup
 maybeDoPacmanAction :: Game -> DrawList Game
@@ -787,10 +782,6 @@ nextGhostsMode g = case g ^. ghostsModes of
 
 -- | if we've just eaten a pill, then add 1 to the counter for the relevant
 -- ghost in the ghost house, if any, and reset the global timer.
--- TODO: if special count for ghost is reached, move that ghost out, and reset
--- it's count.
--- TODO: reset the count of a ghost when it enters the house (i.e. after it has
--- been eaten).
 maybeAddGhostPillCount :: Game -> Game
 maybeAddGhostPillCount g
   | isJust gcounter || fleeing = g
@@ -902,11 +893,6 @@ moveGhostsAction g = do
 -- | move the ghost if the ghostTick is decremented to 0, otherwise just return
 -- the decremented gd with the tick down.  Note the next tick is ONLY choosen if
 -- the ghost actually moves, although it may have changed direction.
--- TODO still need to get the ghost OUT OF the ghost house
--- Changes required:
--- 1. Only GhostsHold or GhostHouse means no tick change
--- 2. add in a check for gstate == GhostLeavingHouse (which has a tick) and
--- handle it separately
 moveGhost :: Game -> GhostData -> GhostData
 moveGhost g gd
   | gmode == GhostsHold || gstate == GhostHouse = gd
@@ -949,6 +935,7 @@ moveGhostOutOfHouse g gd
 moveGhostIntoHouse :: Game -> GhostData -> GhostData
 moveGhostIntoHouse g gd
   | newHw == ghostInSlotCoord = newGd & ghostState .~ GhostHouse
+                                      & ghostPillCount .~ 0
   | otherwise = newGd
   where
       (V2 h w) = gd ^. ghostAt
